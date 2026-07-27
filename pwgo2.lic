@@ -1,0 +1,180 @@
+=begin
+  Thin go2-style traveler with optional powerwalk perceive between rooms.
+  Settings live under go2_settings in character YAML; CLI flags override for one run.
+
+  Examples:
+    ;pwgo2 1234
+    ;pwgo2 bank
+    ;pwgo2 --powerwalk=on 1234
+    ;pwgo2 --powerwalk-in-hunting=on --perceive-health=off bank
+    ;pwgo2 --avoid-perceive=6049,6048 1900
+    ;pwgo2 help
+=end
+
+# load (not require) so edits to powerwalk.rb take effect without restarting Lich
+load File.join(SCRIPT_DIR, 'custom', 'powerwalk.rb')
+
+class PwGo2
+  def initialize
+    Powerwalk.reset_caches!
+
+    args = Script.current.vars[1..].compact
+    if args.empty? || args.any? { |a| a =~ /^help$/i }
+      show_help
+      exit
+    end
+
+    overrides, destination_tokens = parse_cli(args)
+    if destination_tokens.empty?
+      echo 'pwgo2: missing destination. See ;pwgo2 help'
+      exit
+    end
+
+    yaml_settings = begin
+      get_settings.go2_settings
+    rescue StandardError
+      nil
+    end
+    @settings = Powerwalk.resolve_settings(yaml_settings, overrides)
+
+    destination_id = resolve_destination(destination_tokens.join(' '))
+    exit unless destination_id
+
+    if destination_id == Room.current.id
+      echo "pwgo2: already in room #{destination_id}"
+      exit
+    end
+
+    travel_to(destination_id)
+  end
+
+  def show_help
+    output = []
+    output << 'pwgo2 — travel with optional powerwalk perceive'
+    output << ''
+    output << '  ;pwgo2 <target>                              Use go2_settings from YAML'
+    output << '  ;pwgo2 --powerwalk=on|off <target>           Override powerwalk for this run'
+    output << '  ;pwgo2 --powerwalk-in-hunting=on|off <target>'
+    output << '  ;pwgo2 --perceive-health=on|off <target>     Empath: perceive health vs perceive'
+    output << '  ;pwgo2 --avoid-perceive=id,id <target>       Replace avoid list for this run'
+    output << '  ;pwgo2 help'
+    output << ''
+    output << 'YAML (character setup):'
+    output << '  go2_settings:'
+    output << '    powerwalk: false'
+    output << '    powerwalk_in_hunting_areas: false'
+    output << '    perceive_health: true'
+    output << '    avoid_perceive_in_rooms: []'
+    output << ''
+    output << 'Skips perceive when Attunement (or Empathy in health mode) mindstate >= mindstate_cap (default 34).'
+    output << 'Target: room id or map tag (e.g. bank).'
+    respond output
+  end
+
+  def parse_cli(args)
+    overrides = {}
+    destination = []
+    args.each do |arg|
+      case arg
+      when /^--powerwalk=(.+)$/i
+        overrides['powerwalk'] = Powerwalk.parse_on_off(Regexp.last_match(1))
+      when /^--powerwalk-in-hunting=(.+)$/i
+        overrides['powerwalk_in_hunting_areas'] = Powerwalk.parse_on_off(Regexp.last_match(1))
+      when /^--perceive-health=(.+)$/i
+        overrides['perceive_health'] = Powerwalk.parse_on_off(Regexp.last_match(1))
+      when /^--avoid-perceive=(.+)$/i
+        overrides['avoid_perceive_in_rooms'] = Regexp.last_match(1).split(',').map(&:strip).reject(&:empty?).map(&:to_i)
+      when /^--/
+        echo "pwgo2: unknown option #{arg}"
+        exit
+      else
+        destination << arg
+      end
+    end
+    [overrides, destination]
+  end
+
+  def resolve_destination(target)
+    target = target.to_s.strip
+    if target =~ /^\d+$/
+      room_id = target.to_i
+      unless Map[room_id]
+        echo "pwgo2: room #{room_id} not found in map database"
+        return nil
+      end
+      return room_id
+    end
+
+    room_id = DRCT.tag_to_id(target)
+    unless room_id
+      echo "pwgo2: could not resolve destination '#{target}'"
+      return nil
+    end
+    room_id
+  end
+
+  def travel_to(destination_id)
+    unless Room.current.id
+      echo 'pwgo2: current room not found in map database'
+      exit
+    end
+
+    path = Room.current.path_to(destination_id)
+    unless path && !path.empty?
+      echo "pwgo2: no path from #{Room.current.id} to #{destination_id}"
+      exit
+    end
+
+    echo "pwgo2: #{path.length} room(s) to #{destination_id}" \
+         " (powerwalk=#{@settings['powerwalk']}," \
+         " hunting=#{@settings['powerwalk_in_hunting_areas']}," \
+         " health=#{@settings['perceive_health']})"
+
+    path.each do |next_id|
+      exit if dead?
+      DRC.fix_standing
+      waitrt?
+
+      from_id = Room.current.id
+      way = Room.current.wayto[next_id.to_s]
+      unless way
+        echo "pwgo2: no wayto from #{from_id} to #{next_id}"
+        exit
+      end
+
+      result = if way.respond_to?(:call)
+                 way.call
+                 true
+               else
+                 move(way)
+               end
+
+      unless result
+        echo "pwgo2: move failed #{from_id} -> #{next_id}"
+        exit
+      end
+
+      waitrt?
+      unless Room.current.id == next_id
+        # Proc moves may land correctly asynchronously; short wait then recheck.
+        timeout = Time.now + 2
+        sleep 0.05 while Room.current.id != next_id && Time.now < timeout
+      end
+
+      if Room.current.id != next_id
+        echo "pwgo2: expected room #{next_id}, in #{Room.current.id}"
+        exit
+      end
+
+      Powerwalk.maybe_perceive_after_move(Room.current.id, @settings)
+    end
+
+    if Room.current.id == destination_id
+      echo "pwgo2: arrived at #{destination_id}"
+    else
+      echo "pwgo2: finished path but in #{Room.current.id}, wanted #{destination_id}"
+    end
+  end
+end
+
+PwGo2.new

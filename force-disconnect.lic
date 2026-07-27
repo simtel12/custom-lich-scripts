@@ -1,0 +1,6 @@
+if $_DETACHABLE_CLIENT_
+  $_DETACHABLE_CLIENT_.setsockopt(Socket::SOL_SOCKET, Socket::SO_LINGER, [1, 0].pack('ii')) rescue nil
+  $_DETACHABLE_CLIENT_.close
+else
+  echo "no detachable FE"
+end

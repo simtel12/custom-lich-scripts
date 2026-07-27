@@ -1,0 +1,193 @@
+=begin
+  Combined magic + summoning trainer (Warrior Mage friendly).
+
+  Casts from YAML training_spells (same path as magic-training.lic),
+  summons/breaks like summoning.lic, and intermittently perceives for
+  Attunement. Uses get_settings (cambrinth, magic_training_room, etc.).
+
+  Examples:
+    ;train-chargecast
+    ;train-chargecast here
+    ;train-chargecast go 30
+    ;train-chargecast here nosummon Augmentation,Warding,Utility
+=end
+
+class TrainChargecast
+  MAGIC_SKILLS = %w[Augmentation Warding Utility Sorcery Debilitation].freeze
+
+  @@time_in = Time.now
+  @@skill_start = {}
+
+  def self.time_in
+    @@time_in
+  end
+
+  def self.skill_start
+    @@skill_start
+  end
+
+  def initialize
+    arg_definitions = [
+      [
+        { name: 'location', options: %w[here go], optional: true,
+          description: 'here = stay put; go = walk to magic_training_room (default: go)' },
+        { name: 'max_time', regex: /^\d+$/, optional: true,
+          description: 'Max minutes to train (default: 60)' },
+        { name: 'nosummon', regex: /^nosummon$/i, optional: true,
+          description: 'Skip summoning training' },
+        { name: 'training_skills',
+          regex: /^((Augmentation|Warding|Utility|Sorcery|Debilitation)((\s*,\s*)(Augmentation|Warding|Utility|Sorcery|Debilitation))*)$/i,
+          optional: true,
+          description: 'Comma-separated magic skills to train (default: all keys in training_spells)' },
+        { name: 'script_summary', optional: true,
+          description: 'Train magic + summoning with intermittent perceive' }
+      ]
+    ]
+
+    args = parse_args(arg_definitions)
+    @stay_here = args.location.to_s.casecmp('here').zero?
+    @max_time = ((args.max_time || 60).to_i * 60)
+    @do_summon = !args.nosummon && DRStats.warrior_mage?
+    @settings = get_settings
+    @exp_threshold = @settings.magic_exp_training_max_threshold || 32
+    @force_cambrinth = @settings.waggle_force_cambrinth
+    @training_spells = if @settings.training_spells.empty?
+                         @settings.magic_training
+                       else
+                         @settings.training_spells
+                       end
+
+    requested = if args.training_skills
+                  args.training_skills.split(',').map { |s| s.strip.downcase.capitalize }
+                else
+                  MAGIC_SKILLS
+                end
+    @training_skills = requested.select { |skill| @training_spells.key?(skill) }
+
+    @summon_stop = target_mindstate(
+      DRSkill.getxp('Summoning'),
+      @settings.summoning_target_increment,
+      @settings.crossing_training_max_threshold
+    )
+
+    (MAGIC_SKILLS + %w[Summoning Attunement]).each do |skill|
+      @@skill_start[skill] = DRSkill.getxp(skill)
+    end
+
+    echo "Location: #{@stay_here ? "stay here (#{Room.current.id})" : "go to magic_training_room (#{@settings.magic_training_room})"}"
+    echo "Max time: #{@max_time / 60} minutes"
+    echo "Magic skills: #{@training_skills.join(', ')}"
+    echo "Summoning: #{@do_summon ? "yes (stop at mindstate #{@summon_stop})" : 'no'}"
+    echo "Perceive: once per training cycle"
+
+    unless @stay_here
+      room = @settings.magic_training_room
+      if room.to_s.empty?
+        echo 'magic_training_room not set — staying in current room'
+        @stay_here = true
+      else
+        DRCT.walk_to(room)
+      end
+    end
+
+    DRCI.stow_hands if @do_summon
+
+    @cycle = 0
+    loop do
+      if (Time.now - @@time_in) > @max_time
+        echo 'Max time reached — exiting'
+        break
+      end
+
+      magic_left = train_magic_pass
+      summon_left = train_summon_once
+      perceive_once
+
+      @cycle += 1
+      unless magic_left || summon_left
+        echo 'Magic and summoning targets reached — done'
+        break
+      end
+    end
+  end
+
+  def target_mindstate(mindstate, increment, threshold)
+    mindstate + [increment, [threshold - mindstate, 0].max].min
+  end
+
+  def magic_skills_needing_training
+    @training_skills
+      .select { |skill| DRCMM.update_astral_data(@training_spells[skill]) }
+      .reject { |skill| DRSkill.getxp(skill) > @exp_threshold }
+      .sort_by { |skill| [DRSkill.getxp(skill), DRSkill.getrank(skill)] }
+  end
+
+  # One pass over unlocked magic skills. Returns true if more training remains.
+  def train_magic_pass
+    skills = magic_skills_needing_training
+    return false if skills.empty?
+
+    skills.each do |skill|
+      echo "Casting for #{skill}"
+      before_xp = DRSkill.getxp(skill)
+      spell = @training_spells[skill]
+      DRCA.check_discern(spell, @settings) if spell['use_auto_mana']
+      DRCA.cast_spells({ spell_name: spell }, @settings, @force_cambrinth)
+      echo "#{skill} gains: #{DRSkill.getxp(skill) - before_xp}"
+      waitrt?
+      check_health
+    end
+
+    !magic_skills_needing_training.empty?
+  end
+
+  # One summon/break cycle. Returns true if summoning still needs training.
+  def train_summon_once
+    return false unless @do_summon
+    return false if DRSkill.getxp('Summoning') >= @summon_stop
+
+    echo 'Summoning cycle'
+    DRCI.stow_hands
+    DRCS.summon_weapon
+    DRCS.break_summoned_weapon(DRC.right_hand)
+    fput('pathway focus damage') if DRStats.circle >= 4
+    waitrt?
+
+    DRSkill.getxp('Summoning') < @summon_stop
+  end
+
+  def perceive_once
+    return if DRSkill.getxp('Attunement') > @exp_threshold
+
+    echo 'Perceive'
+    DRC.bput('perceive', /Roundtime/i, /You sense/i, /attunement/i, /mana/i, /\.\.\.wait/i)
+    waitrt?
+  end
+
+  def check_health
+    pause 0.5 while stunned?
+    health_data = DRCH.check_health
+    threshold = @settings.health_threshold
+    saferoom = @settings.saferoom_health_threshold
+    if bleeding? || health_data['score'] >= saferoom || DRStats.health < [50, threshold].max || health_data['poisoned'] || health_data['diseased']
+      DRC.message("You're injured! Stopping training")
+      DRC.wait_for_script_to_complete('safe-room', ['force'])
+      exit
+    end
+  end
+end
+
+before_dying do
+  fput('release spell')
+  fput('release mana')
+  fput('release symbiosis')
+
+  total_time = (Time.now - TrainChargecast.time_in) / 60
+  echo "Total time in train-chargecast: #{total_time.to_i} minutes"
+  TrainChargecast.skill_start.each do |skill, start_xp|
+    gained = DRSkill.getxp(skill) - start_xp
+    echo "Total xp gained in #{skill}: #{gained}" if gained != 0
+  end
+end
+
+TrainChargecast.new

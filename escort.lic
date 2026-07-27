@@ -1,0 +1,196 @@
+=begin
+  Local stand-in for obsolete mapdb StringProcs that call start_script('escort').
+
+  Map call sites (no args — room id selects the handler):
+    1633 -> 8934   Book monastery (North Turnpike)
+    6555 -> 6656   Mer'Kresh / M'Riss galley
+    6656 -> 6555   galley reverse
+    957  -> 1904   Crossing ferry fallback (normally bescort)
+    1904 -> 957    Leth ferry fallback (normally bescort)
+
+  Monastery: prefer PERFORM ENTRY (guilded necro), else forest path via 1629.
+  Galley/ferry: delegate to bescort.
+=end
+
+remove_const(:MONASTERY_ROOM_IDS) if const_defined?(:MONASTERY_ROOM_IDS, false)
+MONASTERY_ROOM_IDS = (
+  (8927..8944).to_a + [11_213, 11_215, 11_216, 13_858, 15_961, 15_962, 15_963, 15_965]
+).freeze
+
+# Identical titles make Room.current ambiguous; prefer obvious-exits fingerprints.
+remove_const(:DEEP_FOREST_BY_EXITS) if const_defined?(:DEEP_FOREST_BY_EXITS, false)
+DEEP_FOREST_BY_EXITS = {
+  'Obvious paths: south.' => 8920,
+  'Obvious paths: north, east, southwest.' => 8921,
+  'Obvious paths: northeast.' => 8922,
+  'Obvious paths: southwest, west.' => 8923,
+  'Obvious paths: northeast, south.' => 8924,
+  'Obvious paths: north.' => 8925
+}.freeze
+
+remove_const(:FOREST_PATH_ROOM_IDS) if const_defined?(:FOREST_PATH_ROOM_IDS, false)
+FOREST_PATH_ROOM_IDS = DEEP_FOREST_BY_EXITS.values.freeze
+
+def run_bescort(*args)
+  unless Script.exists?('bescort')
+    echo "escort: bescort not found (needed for #{args.join(' ')})"
+    exit
+  end
+
+  start_script('bescort', args.map(&:to_s))
+  wait_while { running?('bescort') }
+end
+
+def wayto_source(way)
+  if way.respond_to?(:_dump)
+    way._dump.to_s
+  else
+    way.inspect
+  end
+end
+
+def recursive_escort_way?(way)
+  return false unless way.is_a?(Proc) || (defined?(StringProc) && way.is_a?(StringProc))
+
+  wayto_source(way) =~ /start_script\s*\(\s*['"]escort['"]/
+end
+
+def current_room_id
+  exits = XMLData.room_exits_string.to_s.strip
+  if (id = DEEP_FOREST_BY_EXITS[exits])
+    return id
+  end
+
+  Room.current&.id
+end
+
+def wait_until_room_changes(from_id, timeout: 30)
+  deadline = Time.now + timeout
+  pause 0.1 while current_room_id == from_id && Time.now < deadline
+  pause 0.2
+  current_room_id
+end
+
+def walk_to_room(dest_id)
+  dest_id = dest_id.to_i
+  deadline = Time.now + 180
+
+  while (here = current_room_id) != dest_id
+    if Time.now > deadline
+      echo "escort: timed out walking to #{dest_id} (at #{here.inspect})"
+      return false
+    end
+    unless here
+      echo 'escort: Room.current unknown; waiting...'
+      pause 0.5
+      next
+    end
+
+    # path_to excludes source and includes destination; path[0] is the next hop.
+    path = Map[here].path_to(dest_id)
+    unless path && !path.empty?
+      echo "escort: no path to #{dest_id} from #{here}"
+      return false
+    end
+
+    from_id = here
+    to_id = path[0]
+
+    way = Map[from_id].wayto[to_id.to_s]
+    if way.nil?
+      echo "escort: missing wayto #{from_id} -> #{to_id}"
+      return false
+    end
+    if recursive_escort_way?(way)
+      echo "escort: refusing recursive escort edge #{from_id} -> #{to_id}"
+      return false
+    end
+
+    echo "escort: #{from_id} -> #{to_id} (#{way.is_a?(Proc) || (defined?(StringProc) && way.is_a?(StringProc)) ? 'proc' : way})"
+    if way.is_a?(Proc) || (defined?(StringProc) && way.is_a?(StringProc))
+      way.call
+    else
+      move way.to_s
+    end
+    waitrt?
+    arrived = wait_until_room_changes(from_id, timeout: 15)
+    unless arrived
+      echo "escort: still in #{from_id} after move toward #{to_id}"
+      return false
+    end
+  end
+
+  true
+end
+
+def in_monastery?
+  id = current_room_id
+  return true if MONASTERY_ROOM_IDS.include?(id)
+
+  Room.current.title.to_s =~ /Monastery|Book's Private Study/
+end
+
+def enter_monastery_via_entry
+  start_id = current_room_id
+  dothistimeout('perform entry', 8, /Roundtime|roundtime|You can't|What were you|You must|not .+ enough|already|\.\.\.wait/i)
+  waitrt?
+
+  wait_until_room_changes(start_id, timeout: 60)
+  in_monastery?
+end
+
+def enter_monastery_via_forest
+  return false unless walk_to_room(1629)
+
+  put 'ask monk about monastery'
+  pause 0.5
+  put 'ask monk about monastery'
+  wait_until_room_changes(1629, timeout: 30)
+
+  here = current_room_id
+  unless FOREST_PATH_ROOM_IDS.include?(here) || MONASTERY_ROOM_IDS.include?(here)
+    echo "escort: monk did not land in forest/monastery (at #{here.inspect}; exits=#{XMLData.room_exits_string.to_s.strip.inspect})"
+    return false
+  end
+
+  echo "escort: landed at #{here} after monk (exits=#{XMLData.room_exits_string.to_s.strip.inspect})"
+  return true if here == 8934
+
+  walk_to_room(8934)
+end
+
+def enter_monastery
+  target = 8934
+  return if current_room_id == target
+
+  if enter_monastery_via_entry
+    return if current_room_id == target
+
+    unless walk_to_room(target)
+      echo "escort: inside monastery but could not reach #{target} (at #{current_room_id.inspect})"
+    end
+    return
+  end
+
+  echo 'escort: ENTRY unavailable; trying forest path via 1629...'
+  return if enter_monastery_via_forest
+
+  echo "escort: failed to reach monastery (at #{current_room_id.inspect})"
+end
+
+case current_room_id
+when 1633
+  enter_monastery
+when 1629
+  enter_monastery_via_forest
+when 6555
+  run_bescort('galley', 'mriss')
+when 6656
+  run_bescort('galley', 'merkresh')
+when 957
+  run_bescort('ferry', 'leth')
+when 1904
+  run_bescort('ferry', 'crossing')
+else
+  echo "escort: no handler for room #{current_room_id.inspect} (#{Room.current&.title})"
+end

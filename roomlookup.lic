@@ -1,0 +1,65 @@
+=begin
+  Look up a map room by Lich room id (or current room if omitted).
+
+  Examples:
+    ;roomlookup
+    ;roomlookup 2778
+=end
+
+id = Script.current.vars[1] || Room.current&.id
+
+unless id.to_s =~ /^\d+$/
+  echo 'Usage: ;roomlookup [roomid]'
+  exit
+end
+
+room = Map[id.to_i]
+
+unless room
+  echo "No room found for id #{id}"
+  exit
+end
+
+title = Array(room.title).first
+desc  = Array(room.description).first
+paths = Array(room.paths).first
+tags  = Array(room.tags)
+image = room.image.to_s
+exits = (room.wayto || {}).map { |dest, move| "#{move} -> #{dest}" }
+
+# DR mapdb has no province field. Infer from tags / map image name.
+PROVINCES = {
+  'zoluren' => 'Zoluren',
+  'therengia' => 'Therengia',
+  'ilithi' => 'Ilithi',
+  'ilitha' => 'Ilithi',
+  'forfedhdar' => 'Forfedhdar',
+  'forfedhar' => 'Forfedhdar',
+  'qi' => "Qi'Reshalia",
+  "qi'reshalia" => "Qi'Reshalia"
+}.freeze
+
+province = nil
+if (tag = tags.find { |t| t =~ /^meta:mapcategory:(.+)$/i })
+  province = PROVINCES[Regexp.last_match(1).downcase] || Regexp.last_match(1)
+elsif image =~ /\A(Zoluren|Therengia|Ilithi|Ilitha|Forfedhdar|Forfedhar|Qi(?:'Reshalia)?)\b/i ||
+      image =~ /\A(zoluren|therengia|ilithi|ilitha|forfedhdar|forfedhar|qi)[-_]/i
+  province = PROVINCES[Regexp.last_match(1).downcase]
+end
+
+echo "Room #{room.id}"
+echo "  Title:    #{title}"
+echo "  Province: #{province || '(unknown)'}"
+echo "  Location: #{room.location}" if room.location
+echo "  Image:    #{image}" unless image.empty?
+echo "  Climate:  #{room.climate}" if room.climate
+echo "  Terrain:  #{room.terrain}" if room.terrain
+echo "  Paths:    #{paths}" if paths
+echo "  Tags:     #{tags.join(', ')}" unless tags.empty?
+echo "  Exits:"
+if exits.empty?
+  echo '    (none)'
+else
+  exits.each { |line| echo "    #{line}" }
+end
+echo "  Desc:     #{desc}" if desc

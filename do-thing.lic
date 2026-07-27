@@ -1,0 +1,27 @@
+=begin
+  Repeat a command until the script is stopped.
+  Waits out roundtime between sends; pauses 1s when there is no RT.
+
+  Examples:
+    ;repeat dig
+    ;repeat attack
+    ;repeat get rock from backpack
+=end
+
+unless Script.current.vars[1]
+  echo 'Usage: ;repeat <command>'
+  exit
+end
+
+command = Script.current.vars[0]
+echo "Repeating: #{command}  (kill script to stop)"
+
+loop do
+  fput(command)
+  pause 0.1
+  if checkrt > 0
+    waitrt?
+  else
+    pause 1
+  end
+end
