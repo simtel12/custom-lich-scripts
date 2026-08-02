@@ -1,0 +1,48 @@
+=begin
+  Tell a running ;trade to wrap up gracefully.
+
+  Flips the same @closeup flag that ";trade closeup" and the "duration" mode
+  set, so trade stops taking new contracts, delivers whatever it still holds,
+  returns (or stables) the caravan, and exits on its own.
+
+  The flag is read at the top of trade's main loop, so the current leg
+  finishes first -- expect one or more delivery runs before it actually
+  closes out.
+
+  Examples:
+    ;tradestop           # wrap up, then stop the script
+    ;tradestop exit      # ...and quit the game once the caravan is returned
+=end
+
+want_exit = Script.current.vars[1].to_s =~ /^exit$/i
+
+unless Object.const_defined?(:Trade)
+  echo 'The Trade class is not loaded -- ;trade has not run this session.'
+  exit
+end
+
+traders = ObjectSpace.each_object(Object.const_get(:Trade)).to_a
+
+if traders.empty?
+  echo 'No Trade instance found to signal.'
+  exit
+end
+
+echo 'Warning: ;trade does not appear to be running; signalling anyway.' unless Script.running?('trade')
+
+# A stopped-and-restarted trade can leave older instances around that have not
+# been garbage collected yet, so flag them all and report once.
+newly_flagged = traders.count { |trader| !trader.instance_variable_get(:@closeup) }
+
+traders.each do |trader|
+  trader.instance_variable_set(:@closeup, true)
+  trader.instance_variable_set(:@exit, true) if want_exit
+end
+
+if newly_flagged.zero?
+  echo 'trade was already closing up.'
+else
+  echo 'trade will close up: no new contracts, deliver what is in hand, return the caravan.'
+end
+
+echo 'trade will also exit the game when it is done.' if want_exit
