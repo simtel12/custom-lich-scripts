@@ -1,20 +1,45 @@
 =begin
-  Tell a running ;trade to wrap up gracefully.
+  Tell a running ;trade to wrap up gracefully, now or after a while longer.
 
-  Flips the same @closeup flag that ";trade closeup" and the "duration" mode
-  set, so trade stops taking new contracts, delivers whatever it still holds,
+  With no duration this flips the same @closeup flag that ";trade closeup"
+  sets, so trade stops taking new contracts, delivers whatever it still holds,
   returns (or stables) the caravan, and exits on its own.
 
-  The flag is read at the top of trade's main loop, so the current leg
-  finishes first -- expect one or more delivery runs before it actually
-  closes out.
+  With a duration in minutes it instead sets the @time_to_end deadline that
+  ";trade duration <minutes>" uses, so trade keeps working contracts until the
+  deadline passes and then closes up.  That works even when trade was started
+  without a duration, and it replaces an existing one.
+
+  Either way the flag is read from trade's main loop, so the current leg
+  finishes first -- expect one or more delivery runs before it closes out.
 
   Examples:
-    ;tradestop           # wrap up, then stop the script
-    ;tradestop exit      # ...and quit the game once the caravan is returned
+    ;tradestop            # wrap up now
+    ;tradestop 45         # keep going for 45 more minutes, then wrap up
+    ;tradestop exit       # wrap up now, then quit the game
+    ;tradestop 45 exit    # both
 =end
 
-want_exit = Script.current.vars[1].to_s =~ /^exit$/i
+minutes = nil
+want_exit = false
+unknown = []
+
+Array(Script.current.vars[1..-1]).each do |arg|
+  case arg
+  when /^\d+$/
+    minutes = arg.to_i
+  when /^exit$/i
+    want_exit = true
+  else
+    unknown << arg
+  end
+end
+
+unless unknown.empty?
+  echo "Unrecognized argument: #{unknown.join(' ')}"
+  echo 'Usage: ;tradestop [minutes] [exit]'
+  exit
+end
 
 unless Object.const_defined?(:Trade)
   echo 'The Trade class is not loaded -- ;trade has not run this session.'
@@ -32,14 +57,22 @@ echo 'Warning: ;trade does not appear to be running; signalling anyway.' unless 
 
 # A stopped-and-restarted trade can leave older instances around that have not
 # been garbage collected yet, so flag them all and report once.
-newly_flagged = traders.count { |trader| !trader.instance_variable_get(:@closeup) }
+still_trading = traders.count { |trader| !trader.instance_variable_get(:@closeup) }
+deadline = minutes.to_i > 0 ? Time.now + (60 * minutes) : nil
 
 traders.each do |trader|
-  trader.instance_variable_set(:@closeup, true)
+  if deadline
+    trader.instance_variable_set(:@time_to_end, deadline)
+  else
+    trader.instance_variable_set(:@closeup, true)
+  end
   trader.instance_variable_set(:@exit, true) if want_exit
 end
 
-if newly_flagged.zero?
+if deadline
+  echo "trade will keep working contracts for #{minutes} more minutes, until about #{deadline.strftime('%H:%M')}, then close up."
+  echo 'Note: trade is already closing up, so the deadline will not resume it.' if still_trading.zero?
+elsif still_trading.zero?
   echo 'trade was already closing up.'
 else
   echo 'trade will close up: no new contracts, deliver what is in hand, return the caravan.'
