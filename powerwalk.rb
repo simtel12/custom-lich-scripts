@@ -132,7 +132,8 @@ module Powerwalk
     end
 
     # After a successful move into room_id. No-op when disabled/avoided/hunting-gated/capped.
-    # On Empath health "not ready" timer, does not retry — waitrt? and return so travel continues.
+    # On Empath health "fail to sense"/"not ready" (neither costs roundtime), falls back to a
+    # plain perceive once so the walk still trains Attunement instead of getting nothing.
     def maybe_perceive_after_move(room_id, settings)
       unless truthy?(settings['powerwalk'])
         return false
@@ -151,7 +152,10 @@ module Powerwalk
       return false unless should_perceive?(room_id, settings)
 
       command = next_perceive_command(settings)
-      DRC.bput(command, *PERCEIVE_MATCHES)
+      result = DRC.bput(command, *PERCEIVE_MATCHES)
+      if command == 'perceive health' && result =~ /You fail to sense|You're not ready to do that again, yet/i
+        DRC.bput('perceive', *PERCEIVE_MATCHES)
+      end
       waitrt?
       true
     end
