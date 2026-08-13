@@ -1,5 +1,5 @@
 ---
-# uc-zones.yaml — additive zone-annotation layer over dr-scripts/data/base-hunting.yaml
+# base-uc-zones.yaml — additive zone-annotation layer over dr-scripts/data/base-hunting.yaml
 #
 # GENERATED FIRST DRAFT. Produced once by notes/uber-combat/tools/parse-zones.rb
 # (a throwaway one-shot script, not re-run automatically) against
@@ -7,16 +7,16 @@
 # accepted design in notes/uber-combat/requirements/23-loot-nav-progression.md §1
 # and the amendments recorded in notes/uber-combat/99-progress.md.
 #
-# Placement: source of truth is custom-scripts/data/uc-zones.yaml; mirrored
-# byte-identical to lich-5/scripts/data/custom/uc-zones.yaml. Edit the source,
-# mirror to runtime, commit only in custom-scripts/.
+# Placement: source of truth is custom-scripts/data/base-uc-zones.yaml; mirrored
+# byte-identical to lich-5/scripts/data/custom/base-uc-zones.yaml. Edit the
+# source, mirror to runtime, commit only in custom-scripts/.
 #
-# ⚠️ LOADER NAMING IS UNRESOLVED. get_data('uc-zones') does NOT find this file:
-# Lich's to_base_filename is "base-#{suffix}.yaml" (lich-5/lib/common/setup_files.rb:201-203),
-# so get_data('uc-zones') resolves to base-uc-zones.yaml. Either the runtime
-# file must be renamed base-uc-zones.yaml, or the loader must read this path
-# directly instead of going through get_data. Decide before the zone picker is
-# built; until then nothing loads this file automatically.
+# LOADER: reach this file as get_data('uc-zones'). Lich's to_base_filename is
+# "base-#{suffix}.yaml" (lich-5/lib/common/setup_files.rb:201-203), hence the
+# "base-" prefix on the filename — it is required, not decorative. The loader
+# globs base*.yaml and scans scripts/data/custom/ BEFORE scripts/data/
+# (setup_files.rb:181-187), so this copy wins by basename over any same-named
+# file in the stock data dir.
 #
 # SCOPE OF THIS DRAFT (Wave 4 Packet A) — only the ~90%-extractable columns:
 #   rank band (min/max), critter noun list, province, towns, source_line,
