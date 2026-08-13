@@ -1,0 +1,6729 @@
+---
+# uc-zones.yaml — additive zone-annotation layer over dr-scripts/data/base-hunting.yaml
+#
+# GENERATED FIRST DRAFT. Produced once by notes/uber-combat/tools/parse-zones.rb
+# (a throwaway one-shot script, not re-run automatically) against
+# dr-scripts/data/base-hunting.yaml. Hand-maintain after this point per the
+# accepted design in notes/uber-combat/requirements/23-loot-nav-progression.md §1
+# and the amendments recorded in notes/uber-combat/99-progress.md.
+#
+# Placement: source of truth is custom-scripts/data/uc-zones.yaml; mirrored
+# byte-identical to lich-5/scripts/data/custom/uc-zones.yaml. Edit the source,
+# mirror to runtime, commit only in custom-scripts/.
+#
+# ⚠️ LOADER NAMING IS UNRESOLVED. get_data('uc-zones') does NOT find this file:
+# Lich's to_base_filename is "base-#{suffix}.yaml" (lich-5/lib/common/setup_files.rb:201-203),
+# so get_data('uc-zones') resolves to base-uc-zones.yaml. Either the runtime
+# file must be renamed base-uc-zones.yaml, or the loader must read this path
+# directly instead of going through get_data. Decide before the zone picker is
+# built; until then nothing loads this file automatically.
+#
+# SCOPE OF THIS DRAFT (Wave 4 Packet A) — only the ~90%-extractable columns:
+#   rank band (min/max), critter noun list, province, towns, source_line,
+#   rank_confidence, and provenance/confidence on every field.
+# Deliberately NOT emitted here (owned by other, separate Wave 4 packets):
+#   - `critters:` top-level dictionary (skinnable/drops_boxes/construct/
+#     undead/corporeal/cursed/ritual_eligible/arrange_type) — 0-97% extractable
+#     from comments per §2's table; needs an elanthipedia pass + runtime
+#     harvesting, not a comment parser. See Wave 4 packets #2/#3/#4.
+#   - `cursed` / `ritual_eligible` zone or critter flags — 0% extractable from
+#     comments (measured fact); left absent, to be filled by the runtime
+#     harvest hook (Wave 4 packet #2).
+#   - `modes:` block — per binding instruction, modes are DERIVED AT LOAD TIME
+#     by the future loader, never stored. Documented below instead.
+#   - room lists — 331/345 zone names already exist as Lich map-DB tags;
+#     `Map.rooms_by_tag(<zone_key>)` regenerates them at load time. The 14
+#     zones without a matching tag are not specially marked here; that
+#     cross-check is a separate concern from comment parsing.
+#   - `outdoors` / `swarm` / `requires` / `hazards` / `blacklist` /
+#     `loot_additions` — near-0% extractable from comments per §2's table;
+#     free-text notes are preserved verbatim in `notes:` for a human (or a
+#     later packet) to mine, but were not structured here.
+#
+# MODE DERIVATION RULES (for the future loader — NOT stored per-zone here):
+#   normal:      any_of(skinnable, drops_boxes)                   [hard any_of]
+#   skin:        qualifying_ratio(skinnable)      >= threshold    [A1: default 0.6, configurable]
+#   lockpick:    qualifying_ratio(drops_boxes)     >= threshold   [A1: default 0.6, configurable]
+#   cleric:      qualifying_ratio(cursed)          >= threshold   [A1: default 0.6, configurable]
+#   necro:       qualifying_ratio(ritual_eligible)  >= threshold  [A1: default 0.6, configurable]
+#   empath:      all_of(construct OR undead)                     [A1: kept hard all_of — a non-qualifying
+#                                                                   critter here is a guild-law violation
+#                                                                   (attacking a living creature), not lost
+#                                                                   yield, so no threshold applies]
+#   mm_outdoors: zone_field(outdoors in [true, mixed])
+#   "qualifying_ratio" = (# critters in the zone's `critters:` list satisfying the
+#   predicate) / (# critters in the list). Requires the critters: dictionary
+#   (deferred, see above) to compute; cannot be evaluated from this file alone.
+#
+# AMENDMENT A2 (binding, overrides §1's "union mins / first link's max"):
+#   For zones whose comment block carries 2+ elanthipedia links with parseable
+#   ranges, the band is (max of each link's min, min of each link's max),
+#   ignoring any link whose max is unknown ('?') when computing the min-of-maxes
+#   (an unknown max is treated as "no constraint from this link", never as
+#   infinity). When the resulting min exceeds the resulting max, the zone is
+#   flagged `rank_review: true` with a `rank_review_reason` — conservative by
+#   design, since the failure mode here is death in an undead/swarm zone.
+#
+# AMENDMENT A3 (binding): `rank_confidence: low` is a HARD EXCLUSION from
+#   auto-selection, not just an annotation. It fires when: no band was
+#   parseable at all; the source comment contained a '?'; the A2 merge
+#   inverted (see rank_review above); the zone's notes describe it as a
+#   "flex creature" (a sentinel band, not a real one — the mechanical_mice
+#   0-2000 case from §1's worked example); or the band's span exceeds
+#   500 ranks (same rationale, generalized past the one
+#   worked example — see the parser's run report for exactly which zones this
+#   span rule caught). A per-zone opt-in override field,
+#   `allow_low_confidence_auto_select: true`, is reserved for a human to set
+#   by hand after verifying a specific low-confidence zone in-game; none is
+#   set by this generated draft.
+#
+# FIELD NOTES not specified by §1's schema (this packet's own choices):
+#   access:      "plain" | "escort" — mirrors which base-hunting.yaml section
+#                the zone came from (hunting_zones vs escort_zones).
+#   province:    for `access: plain`, taken from the ZOLUREN/ILITHI/THERENGIA/
+#                FORFEDHDAR/QI'RESHALIA/FANG COVE section banner in effect.
+#                Fang Cove is a 6th region present in the source file but not
+#                listed among the 5 provinces named in the file's own header
+#                comment or in the requirements doc; kept as its own literal
+#                province value rather than folded into one of the 5.
+#                For `access: escort`, taken verbatim from the trailing
+#                bare-word comment line in that zone's block (per the file's
+#                own header: "Escort Zones should list a province"). Two
+#                escort zones (velaka_westanuryn, velaka_slavers) literally
+#                say "Muspar'i" there, which is a TOWN name, not one of the
+#                5 provinces — preserved verbatim as a source-data
+#                inconsistency rather than silently corrected.
+#   towns:       reverse-derived from `hunting_areas_by_town`; a zone with no
+#                town section reference gets an empty list, not an omission.
+#   alias_of:    present only on the handful of zone keys that are pure
+#                backward-compatibility/typo aliases (YAML `*anchor`
+#                references in base-hunting.yaml, e.g. `slyphs: *sylphs`).
+#                Such a zone's rank/critters/province are copied from the
+#                aliased target; `provenance.rank` reads "alias".
+#   rank_review / rank_review_reason: present only when A2 inverted.
+#   confidence:  a whole-zone quality rollup (not per §1's per-field
+#                provenance, which is separate). "unverified" only when a
+#                zone had neither a parseable epedia link nor a province
+#                (i.e. essentially no signal at all); otherwise tracks
+#                rank_confidence, downgraded to "medium" when province is
+#                also missing.
+#
+# schema_version: 1 — bump if the shape below changes incompatibly.
+schema_version: 1
+
+zones:
+  grave_worms:
+    rank:
+      min: 90
+      max: 130
+    rank_confidence: high
+    critters:
+      - "grave worm"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 29
+    notes: "Mixed with lower-level wolves. Great swarm."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  blue_crocs:
+    rank:
+      min: 100
+      max: 140
+    rank_confidence: high
+    critters:
+      - "blue-belly crocodile"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 36
+    notes: "Spawn is hit or miss, often busy."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  brocket_young:
+    rank:
+      min: 90
+      max: 110
+    rank_confidence: high
+    critters:
+      - "young red brocket deer"
+    province: "Therengia"
+    towns: []
+    access: escort
+    source_line: 43
+    notes: "High swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  golden_atiket:
+    rank:
+      min: 120
+      max: 170
+    rank_confidence: high
+    critters:
+      - "golden scaled atik'et"
+      - "grey and tan mottled westanuryn"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 51
+    notes: "mixed in with lower-level Young Firecats"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  brocket_mid:
+    rank:
+      min: 135
+      max: 180
+    rank_confidence: high
+    critters:
+      - "red brocket deer"
+    province: "Therengia"
+    towns: []
+    access: escort
+    source_line: 58
+    notes: "high swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  leucro1:
+    rank:
+      min: 160
+      max: 215
+    rank_confidence: high
+    critters:
+      - "giant black leucro"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 65
+    notes: "Requires at least 130 Perception to access"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  leucro2:
+    rank:
+      min: 160
+      max: 215
+    rank_confidence: low
+    critters:
+      - "giant black leucro"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 73
+    notes: "Requires at least 130 Perception to access, smidgen | higher than leucro1, better spawns"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: low
+  kartais:
+    rank:
+      min: 180
+      max: 250
+    rank_confidence: high
+    critters:
+      - "seordhevor kartais"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 80
+    notes: "Undead, great swarm, corporeal"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  velaka_westanuryn:
+    rank:
+      min: 180
+      max: 290
+    rank_confidence: high
+    critters:
+      - "mottled westanuryn"
+    province: "Muspar'i"
+    towns: []
+    access: escort
+    source_line: 87
+    notes: "May have a wandering velaka_slaver"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  brocket_elder:
+    rank:
+      min: 200
+      max: 260
+    rank_confidence: high
+    critters:
+      - "elder red brocket deer"
+    province: "Therengia"
+    towns: []
+    access: escort
+    source_line: 94
+    notes: "high swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  velaka_slavers:
+    rank:
+      min: 225
+      max: 360
+    rank_confidence: high
+    critters:
+      - "velakan slaver"
+    province: "Muspar'i"
+    towns: []
+    access: escort
+    source_line: 101
+    notes: "May have a wandering velaka_westanuryn"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  red-gold_atiket:
+    rank:
+      min: 250
+      max: 350
+    rank_confidence: high
+    critters:
+      - "red-gold scaled atik'et"
+      - "mottled westanuryn"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 108
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  geni:
+    rank:
+      min: 250
+      max: 350
+    rank_confidence: high
+    critters:
+      - "forest geni"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 116
+    notes: "Good spawn but spread out, you may need to move around | Requires very high perception, known to get stuck with 250-300+"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  supple_firecat:
+    rank:
+      min: 310
+      max: 450
+    rank_confidence: high
+    critters:
+      - "supple firecat"
+      - "muscular firecat"
+    province: "Zoluren"
+    towns: []
+    access: escort
+    source_line: 124
+    notes: "The weaker Muscular firecats are mixed in with Supple firecats"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  polohizh_hara:
+    rank:
+      min: 500
+      max: 700
+    rank_confidence: high
+    critters:
+      - "poloh'izh"
+    province: "Qi'Reshalia"
+    towns: []
+    access: escort
+    source_line: 130
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  desert_juvenile_armadillos:
+    rank:
+      min: 600
+      max: 740
+    rank_confidence: high
+    critters:
+      - "juvenile desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: escort
+    source_line: 137
+    notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  adult_armadillos:
+    rank:
+      min: 725
+      max: 1000
+    rank_confidence: high
+    critters:
+      - "adult desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: escort
+    source_line: 144
+    notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  elder_armadillos:
+    rank:
+      min: 725
+      max: 1100
+    rank_confidence: high
+    critters:
+      - "adult elder armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: escort
+    source_line: 151
+    notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: comment
+      towns: none
+    confidence: high
+  rats:
+    rank:
+      min: 0
+      max: 30
+    rank_confidence: high
+    critters:
+      - "rat"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 342
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  black_rats:
+    rank:
+      min: 0
+      max: 30
+    rank_confidence: high
+    critters:
+      - "rat"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 352
+    notes: "same rats, out ne gate"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rats_lumber:
+    rank:
+      min: 0
+      max: 30
+    rank_confidence: high
+    critters:
+      - "rat"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 360
+    notes: "premie only rooms - in shipyard"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rats_brewery:
+    rank:
+      min: 0
+      max: 30
+    rank_confidence: high
+    critters:
+      - "rat"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 367
+    notes: "premie only rooms - out ne gate"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  louts:
+    rank:
+      min: 0
+      max: 35
+    rank_confidence: high
+    critters:
+      - "sleazy lout"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 373
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  mechanical_mice:
+    rank:
+      min: 0
+      max: 2000
+    rank_confidence: low
+    critters:
+      - "giant mechanical mouse"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 393
+    notes: "Flex creatures, require special weapon material to hit | 51715, 51716, and 132 are outdoors, rest are indoors."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  hogs:
+    rank:
+      min: 10
+      max: 35
+    rank_confidence: high
+    critters:
+      - "musk hog"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 407
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  silverfish:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 419
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  hardened_silverfish:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 428
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  elder_silverfish:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 438
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  fell_hogs:
+    rank:
+      min: 10
+      max: 40
+    rank_confidence: high
+    critters:
+      - "fell hog"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 445
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  pale_grey_death_squirrels:
+    rank:
+      min: 10
+      max: 35
+    rank_confidence: high
+    critters:
+      - "pale grey death squirrel"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 452
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  goblins:
+    rank:
+      min: 18
+      max: 34
+    rank_confidence: medium
+    critters:
+      - "forager goblin"
+      - "field goblin"
+      - "scavenger goblin"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 466
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  goblin_shaman_crossing:
+    rank:
+      min: 20
+      max: 50
+    rank_confidence: high
+    critters:
+      - "goblin shaman"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 475
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  badgers:
+    rank:
+      min: 19
+      max: 42
+    rank_confidence: high
+    critters:
+      - "striped badger"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 485
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  badgers_trail:
+    rank:
+      min: 19
+      max: 42
+    rank_confidence: high
+    critters:
+      - "striped badger"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 494
+    notes: "same badgers, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  origami:
+    rank:
+      min: 20
+      max: 55
+    rank_confidence: high
+    critters:
+      - "origami creature"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 500
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  pothanit:
+    rank:
+      min: 22
+      max: 39
+    rank_confidence: high
+    critters:
+      - "croff pothanit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 510
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  pothanit_tree:
+    rank:
+      min: 22
+      max: 39
+    rank_confidence: high
+    critters:
+      - "croff pothanit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 518
+    notes: "same pothanit, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blood_dryad:
+    rank:
+      min: 25
+      max: 40
+    rank_confidence: high
+    critters:
+      - "blood dryad"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 524
+    notes: "There are Blood Dryads and Blood Nyads in this area."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cougars_forest_of_night:
+    rank:
+      min: 30
+      max: 49
+    rank_confidence: high
+    critters:
+      - "cougar"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 534
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  grass_eels:
+    rank:
+      min: 25
+      max: 50
+    rank_confidence: high
+    critters:
+      - "grass eel"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 542
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  grass_eels_incline:
+    rank:
+      min: 25
+      max: 50
+    rank_confidence: high
+    critters:
+      - "grass eel"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 551
+    notes: "same eels, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  water_sprites_and_lipopods:
+    rank:
+      min: 32
+      max: 45
+    rank_confidence: medium
+    critters:
+      - "glutinous lipopod"
+      - "water sprite"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 560
+    notes: "There are Water Sprites and Glutinous Lipopods in this area. | Very heavy RT on the way in and out of the area."
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  cougars:
+    rank:
+      min: 30
+      max: 49
+    rank_confidence: high
+    critters:
+      - "cougar"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 569
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  trollkin:
+    rank:
+      min: 33
+      max: 40
+    rank_confidence: high
+    critters:
+      - "trollkin"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 576
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  trollkin_slope:
+    rank:
+      min: 33
+      max: 40
+    rank_confidence: high
+    critters:
+      - "trollkin"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 583
+    notes: "Same trollkin, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scouts:
+    rank:
+      min: 36
+      max: 49
+    rank_confidence: high
+    critters:
+      - "s'lai scout"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 589
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  hogs_vineyard:
+    rank:
+      min: 18
+      max: 35
+    rank_confidence: medium
+    critters:
+      - "musk hog"
+      - "wild boar"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 601
+    notes: "Newly separated to hogs/boars only"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  cougars_vineyard:
+    rank:
+      min: 35
+      max: 49
+    rank_confidence: medium
+    critters:
+      - "cougar"
+      - "small grendel"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 610
+    notes: "Newly separated to only cougars and grendals(nocturnal)"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  wood_trolls_vineyard:
+    rank:
+      min: 36
+      max: 53
+    rank_confidence: high
+    critters:
+      - "wood troll"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 622
+    notes: "Newly separated to wood trolls only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  animated_items:
+    rank:
+      min: 7
+      max: 9
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 629
+    notes: "new mob - critter level 7-9                                            40-65 | Premie Only Rooms"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  tree_snakes_spiders_baearholt:
+    rank:
+      min: 60
+      max: 80
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 638
+    notes: "smaller version of the Therengia mobs                                  60-80 | critter level  10-14 - snakes by day, spiders by night"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  ossein_amalgams:
+    rank:
+      min: 70
+      max: 90
+    rank_confidence: high
+    critters:
+      - "ichorous ossein amalgam"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 651
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  greater_water_sprites:
+    rank:
+      min: 18
+      max: 22
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 659
+    notes: "new mob - critter level 18-22                                          85-130"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  putrid_tree_snakes:
+    rank:
+      min: 100
+      max: 130
+    rank_confidence: high
+    critters:
+      - "putrid tree snake"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 669
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  undead_gerbils:
+    rank:
+      min: 23
+      max: 27
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 680
+    notes: "new mob - critter level 23-27                                          120-160 | You'll need to remove gerbil's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  storm_geese:
+    rank:
+      min: 28
+      max: 32
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 690
+    notes: "new mob - critter level 28-32                                         130-200 | You'll need to remove geese (goose) from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  razor_zombie_boars:
+    rank:
+      min: 160
+      max: 210
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 698
+    notes: "new mob - critter level 35                                            160-210"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  revenant_conscripts:
+    rank:
+      min: 40
+      max: 60
+    rank_confidence: high
+    critters:
+      - "revenant conscript"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 706
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bobcats:
+    rank:
+      min: 45
+      max: 49
+    rank_confidence: medium
+    critters:
+      - "bobcat"
+      - "jackal"
+      - "cougar"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 716
+    notes: "beware duplicate room numbers towards the back of the zone."
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  cave_bears:
+    rank:
+      min: 45
+      max: 65
+    rank_confidence: high
+    critters:
+      - "cave bear"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 725
+    notes: "beware people mining and leaving \"rocks\" behind that may be very heavy and autolooted"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  reavers:
+    rank:
+      min: 45
+      max: 55
+    rank_confidence: medium
+    critters:
+      - "wind hound"
+      - "faenrae reaver"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 733
+    notes: "Caution: hounds are live and reavers are undead"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  bone_wolves:
+    rank:
+      min: 45
+      max: 59
+    rank_confidence: medium
+    critters:
+      - "bone wolf"
+      - "revenant zombie"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 742
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  beisswurms:
+    rank:
+      min: 50
+      max: 63
+    rank_confidence: high
+    critters:
+      - "beisswurm"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 750
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  buccas:
+    rank:
+      min: 50
+      max: 65
+    rank_confidence: high
+    critters:
+      - "malodorous bucca"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 757
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  buccas_premium:
+    rank:
+      min: 50
+      max: 65
+    rank_confidence: high
+    critters:
+      - "malodorous bucca"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 766
+    notes: "same buccas, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  endrus_serpents:
+    rank:
+      min: 50
+      max: 90
+    rank_confidence: high
+    critters:
+      - "endrus serpent"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 771
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  copperheads:
+    rank:
+      min: 55
+      max: 70
+    rank_confidence: high
+    critters:
+      - "copperhead viper"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 783
+    notes: "19228 is a Safe room, don't include in the hunting section"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  crossing_blood_wolves:
+    rank:
+      min: 60
+      max: 75
+    rank_confidence: high
+    critters:
+      - "blood wolf"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 791
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rock_trolls:
+    rank:
+      min: 60
+      max: 73
+    rank_confidence: high
+    critters:
+      - "rock troll"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 800
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rock_trolls_rockslide:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 822
+    notes: "trolls past the rockslide"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  fire_sprites:
+    rank:
+      min: 80
+      max: 100
+    rank_confidence: high
+    critters:
+      - "fire sprite"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 828
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snowbeasts:
+    rank:
+      min: 80
+      max: 105
+    rank_confidence: high
+    critters:
+      - "snowbeast"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 841
+    notes: "2264 causes a loop, do not use | 2256 frequently has issues with day/night descriptions"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_ogres:
+    rank:
+      min: 80
+      max: 120
+    rank_confidence: high
+    critters:
+      - "young ogre"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 857
+    notes: "1593 is a Safe room, don't include in the hunting section"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_ogres_hollow:
+    rank:
+      min: 80
+      max: 120
+    rank_confidence: high
+    critters:
+      - "young ogre"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 866
+    notes: "Same young ogres, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  silverbacked_bears:
+    rank:
+      min: 85
+      max: 105
+    rank_confidence: high
+    critters:
+      - "silver-backed bear"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 871
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  moss_meys_leth:
+    rank:
+      min: 90
+      max: 135
+    rank_confidence: high
+    critters:
+      - "moss mey"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 878
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  granite_gargoyles_monastary:
+    rank:
+      min: 95
+      max: 125
+    rank_confidence: high
+    critters:
+      - "granite gargoyle"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 888
+    notes: "premie only rooms - outside Crossing North Gate | Newly separated gargoyles - no skunks or spirits"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  crypt_fiend:
+    rank:
+      min: 100
+      max: 145
+    rank_confidence: high
+    critters:
+      - "crypt fiend"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 899
+    notes: "Add jade apples to loot additions, sells like gems? | Need light source to access area"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  thugs:
+    rank:
+      min: 110
+      max: 150
+    rank_confidence: high
+    critters:
+      - "thug"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 905
+    notes: "Rooms reworked: normal/existing (~25 relative level)"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  thugs_archway:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 913
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  thugs_mound:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 924
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  dire_bears:
+    rank:
+      min: 120
+      max: 170
+    rank_confidence: high
+    critters:
+      - "dire bear"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 936
+    notes: "1555 is bugged, do not use | You'll need to remove bear's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dire_bears_premie:
+    rank:
+      min: 120
+      max: 170
+    rank_confidence: high
+    critters:
+      - "dire bear"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 946
+    notes: "same bears, just premie only rooms | You'll need to remove bear's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scout_ogres:
+    rank:
+      min: 120
+      max: 160
+    rank_confidence: high
+    critters:
+      - "scout ogre"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 951
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  river_sprites:
+    rank:
+      min: 120
+      max: 175
+    rank_confidence: high
+    critters:
+      - "river sprite"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 960
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  thicket_vipers:
+    rank:
+      min: 125
+      max: 165
+    rank_confidence: high
+    critters:
+      - "giant thicket viper"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 967
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  thicket_vipers_gap:
+    rank:
+      min: 130
+      max: 180
+    rank_confidence: high
+    critters:
+      - "giant thicket viper"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 976
+    notes: "Estate Holder Only - Most difficult of the Thicket Vipers"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  forest_bandits:
+    rank:
+      min: 160
+      max: 200
+    rank_confidence: high
+    critters:
+      - "forest bandit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 991
+    notes: "rank range is estimate based on critter range - Strong Magic"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scavenger_trolls:
+    rank:
+      min: 170
+      max: 220
+    rank_confidence: high
+    critters:
+      - "scavenger troll"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1003
+    notes: "Caution: may steal your weapons"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dryad_priestess:
+    rank:
+      min: 175
+      max: 220
+    rank_confidence: high
+    critters:
+      - "dryad priestess"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1013
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dryad_priestess_premium:
+    rank:
+      min: 175
+      max: 220
+    rank_confidence: high
+    critters:
+      - "dryad priestess"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1020
+    notes: "same dryads, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dryads:
+    rank:
+      min: 175
+      max: 220
+    rank_confidence: high
+    critters:
+      - "twisted dryad"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1025
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  twisted_dryads_premium:
+    rank:
+      min: 175
+      max: 220
+    rank_confidence: high
+    critters:
+      - "twisted dryad"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1037
+    notes: "same dryads, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  black_leucro_mill:
+    rank:
+      min: 180
+      max: 230
+    rank_confidence: high
+    critters:
+      - "giant black leucro"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1043
+    notes: "Estate Holder Only - most difficult of the black leucro"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  leth_death_spirits:
+    rank:
+      min: 200
+      max: 250
+    rank_confidence: high
+    critters:
+      - "pale grey death spirit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1051
+    notes: "In the forest of night, uses silverclaw hub for day access"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  pale_gray_spirits:
+    rank:
+      min: 200
+      max: 250
+    rank_confidence: high
+    critters:
+      - "pale grey death spirit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1064
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  pale_gray_spirits_path:
+    rank:
+      min: 200
+      max: 250
+    rank_confidence: high
+    critters:
+      - "pale grey death spirit"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1072
+    notes: "Estate Holder Only - standard outdoor rooms right outside crossing"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rock_guardians:
+    rank:
+      min: 200
+      max: 323
+    rank_confidence: high
+    critters:
+      - "rock guardian"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1080
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  rock_guardians_path:
+    rank:
+      min: 200
+      max: 323
+    rank_confidence: high
+    critters:
+      - "rock guardian"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1090
+    notes: "same guardian - slightly harder - Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cave_trolls:
+    rank:
+      min: 220
+      max: 375
+    rank_confidence: high
+    critters:
+      - "cave troll"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1096
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  giant_bears:
+    rank:
+      min: 210
+      max: 290
+    rank_confidence: high
+    critters:
+      - "giant bear"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1106
+    notes: "Super high spawn | You'll need to remove bear's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  giant_bears_cave:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1118
+    notes: "same giant bears - premie only rooms but **you can escort in non-premie** | You'll need to remove bear's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  onyx_gargoyles:
+    rank:
+      min: 320
+      max: 400
+    rank_confidence: high
+    critters:
+      - "onyx gargoyle"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1123
+    notes: "EMPATH SAFE - can be skinned and drops boxes, several rooms with good life mana"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  onyx_gargoyles_glade:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1136
+    notes: "same onyx gargoyles as above - premie only rooms but **you can escort in non-premie**"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  toads:
+    rank:
+      min: 300
+      max: 370
+    rank_confidence: high
+    critters:
+      - "treehopper toad"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1143
+    notes: "Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ember_bulls:
+    rank:
+      min: 280
+      max: 400
+    rank_confidence: high
+    critters:
+      - "ember bull"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1148
+    notes: "range is a guestimate based on criter level 67-69"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ember_bulls_hillside:
+    rank:
+      min: 325
+      max: 500
+    rank_confidence: high
+    critters:
+      - "ember bull"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1158
+    notes: "range is a guestimate based on criter level 70-74 | Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  germishdin:
+    rank:
+      min: 330
+      max: 520
+    rank_confidence: high
+    critters:
+      - "misshapen germish'din"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1165
+    notes: "Badly train stealth (they're blind), undead, and steal shields | with more than 1 person in room and throw them into adjacent rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  gigantic_lachmate:
+    rank:
+      min: 350
+      max: 400
+    rank_confidence: high
+    critters:
+      - "gigantic lachmate"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1183
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snaer_hafwa_crossing:
+    rank:
+      min: 350
+      max: 500
+    rank_confidence: high
+    critters:
+      - "snaer hafwa"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1192
+    notes: "undead, incorp"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  wir_dinego_crossing:
+    rank:
+      min: 360
+      max: 450
+    rank_confidence: high
+    critters:
+      - "wir dinego"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1204
+    notes: "Coporeal undead, night time only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  gigantic_lachmate_stairs:
+    rank:
+      min: 375
+      max: 425
+    rank_confidence: high
+    critters:
+      - "gigantic lachmate"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1227
+    notes: "premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  warklin:
+    rank:
+      min: 400
+      max: 600
+    rank_confidence: medium
+    critters:
+      - "armored warklin"
+      - "warklin mauler"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1236
+    notes: "Incredible swarm, usually packed | Slice damage immune"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  warklin_pit:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1247
+    notes: "Same warklin - Estate Holder only rooms"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  emerald_claw_trolls:
+    rank:
+      min: 450
+      max: 650
+    rank_confidence: high
+    critters:
+      - "emerald claw troll"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1255
+    notes: "New creature (2026), designed during SimuCon live dev panel."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  crauyarin_scuttler:
+    rank:
+      min: 515
+      max: 725
+    rank_confidence: high
+    critters:
+      - "crauyarin scuttler"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1266
+    notes: "Added TT 126 - Special interactions with lunar magic | Constructs"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  storm_bulls:
+    rank:
+      min: 550
+      max: 750
+    rank_confidence: high
+    critters:
+      - "storm bull"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1276
+    notes: "Good swarm, lots of items for crafting off these | Leeches to and from accessing them"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  resuscitant:
+    rank:
+      min: 550
+      max: 800
+    rank_confidence: high
+    critters:
+      - "misenseor resuscitant"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1293
+    notes: "Need light source to access area"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shadewing_harpy:
+    rank:
+      min: 700
+      max: 900
+    rank_confidence: high
+    critters:
+      - "shadewing harpy"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1300
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  xalas_1:
+    rank:
+      min: 750
+      max: 1000
+    rank_confidence: medium
+    critters:
+      - "xala'shar magus"
+      - "xala'shar thrall"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1308
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  xalas_2:
+    rank:
+      min: 900
+      max: 1100
+    rank_confidence: medium
+    critters:
+      - "xala'shar vanquisher"
+      - "xala'shar conjurer"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1318
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  xalas_3:
+    rank:
+      min: 900
+      max: 1300
+    rank_confidence: medium
+    critters:
+      - "xala'shar slayer"
+      - "xala'shar archimage"
+      - "xala'shar vindicator"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1330
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  xalas_4:
+    rank:
+      min: 950
+      max: 1300
+    rank_confidence: medium
+    critters:
+      - "xala'shar archer"
+      - "xala'shar shredder"
+      - "xala'shar overseer"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1339
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  lava_drakes:
+    rank:
+      min: 900
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "lava drake"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1348
+    notes: "Great swarm, throw dirt in eyes which blind and give rt | buries underground to heal | Incredibly packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  lava_drakes_crevice:
+    rank:
+      min: 900
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "lava drake"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1359
+    notes: "Same lava drakes, premie only rooms, past the crevice"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  fuligin_moths:
+    rank:
+      min: 950
+      max: 1400
+    rank_confidence: high
+    critters:
+      - "umbral moth"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1368
+    notes: "Great swarm, packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cabalist:
+    rank:
+      min: 1100
+      max: 1400
+    rank_confidence: high
+    critters:
+      - "arthelun cabalist"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1378
+    notes: "Magic casters, tons of boxes"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cabalist-outdoors:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1387
+    notes: "Helpful subset of outdoor Cabalist rooms for optimal Traders and Moon Mage training"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  cabalist_crevice:
+    rank:
+      min: 1100
+      max: 1400
+    rank_confidence: high
+    critters:
+      - "arthelun cabalist"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1392
+    notes: "same cabalists, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  void_moths:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "void black umbral moth"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1398
+    notes: "Incredible swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scavenger_giants:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "scavenger giant"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1408
+    notes: "strong magics, magic word suggested"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scavenger_giants_track:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "scavenger giant"
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1422
+    notes: "same giants, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  avtalia_scuttlers:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: medium
+    critters: []
+    province: "Zoluren"
+    towns: []
+    access: plain
+    source_line: 1428
+    notes: "critter level 184 +/- 1                                            1450 to 1750 | GM Notes: this creature requires you be an Empath, or be supported by one."
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  shard_kobolds:
+    rank:
+      min: 35
+      max: 50
+    rank_confidence: high
+    critters:
+      - "kobold"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1440
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  lengthy_grass_eels:
+    rank:
+      min: 45
+      max: 60
+    rank_confidence: high
+    critters:
+      - "lengthy grass eel"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1448
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snippets:
+    rank:
+      min: 70
+      max: 100
+    rank_confidence: high
+    critters:
+      - "snippet"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1458
+    notes: "Construct"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snowbeasts_dragonspine:
+    rank:
+      min: 80
+      max: 105
+    rank_confidence: high
+    critters:
+      - "snowbeast"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1467
+    notes: "Separated from granite gargoyles on Tuesday Tidings 82"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snowbeasts_grove:
+    rank:
+      min: 80
+      max: 105
+    rank_confidence: high
+    critters:
+      - "snowbeast"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1479
+    notes: "Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_rock_trolls:
+    rank:
+      min: 80
+      max: 115
+    rank_confidence: high
+    critters:
+      - "rock troll"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1487
+    notes: "Shard rock trolls (outside south gate)"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  undead_kobolds:
+    rank:
+      min: 85
+      max: 110
+    rank_confidence: medium
+    critters:
+      - "skeletal kobold savage"
+      - "skeletal kobold headhunter"
+      - "zombie kobold savage"
+      - "zombie kobold headhunter"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1499
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  granite_gargoyles:
+    rank:
+      min: 95
+      max: 125
+    rank_confidence: high
+    critters:
+      - "granite gargoyle"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1509
+    notes: "Empaths: No longer mixed with snowbeasts and are now shock-free constructs"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blue_belly_crocs_shard:
+    rank:
+      min: 100
+      max: 140
+    rank_confidence: high
+    critters:
+      - "blue-belly crocodile"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1526
+    notes: "Near Shard (Ilithi Province), NOT Zoluren Province"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cadaverous_crocodiles:
+    rank:
+      min: 100
+      max: 160
+    rank_confidence: high
+    critters:
+      - "cadaverous blue-belly crocodile"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1531
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  eidolon_steeds:
+    rank:
+      min: 100
+      max: 125
+    rank_confidence: high
+    critters:
+      - "eidolon steed"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1540
+    notes: "Spawn improved by TT52 - hit hard"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  eidolon_steeds_clearing:
+    rank:
+      min: 100
+      max: 125
+    rank_confidence: high
+    critters:
+      - "eidolon steed"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1547
+    notes: "Estate Holder Only - hit hard"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  sylphs:
+    rank:
+      min: 100
+      max: 175
+    rank_confidence: high
+    critters:
+      - "sylph"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1553
+    notes: "Construct"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  zombie_red_leucro:
+    rank:
+      min: 130
+      max: 180
+    rank_confidence: high
+    critters:
+      - "zombie red leucro"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1562
+    notes: "undead"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_blue_dappled_prereni:
+    rank:
+      min: 120
+      max: 180
+    rank_confidence: high
+    critters:
+      - "young blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1571
+    notes: "Crazy swarm, packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_prereni_stones:
+    rank:
+      min: 130
+      max: 190
+    rank_confidence: high
+    critters:
+      - "young blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1578
+    notes: "premie only rooms, slightly higher level than the standard ones"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  small_tree_sloths:
+    rank:
+      min: 150
+      max: 200
+    rank_confidence: high
+    critters:
+      - "small tree sloth"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1582
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  windbags_sylphs:
+    rank:
+      min: 150
+      max: 250
+    rank_confidence: medium
+    critters:
+      - "windbag"
+      - "sylph"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1591
+    notes: "Estate Holder Only - Construct"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  frostweaver_den:
+    rank:
+      min: 180
+      max: 260
+    rank_confidence: high
+    critters:
+      - "frostweaver"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1601
+    notes: "Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  frostcrones:
+    rank:
+      min: 200
+      max: 300
+    rank_confidence: high
+    critters:
+      - "frostcrone"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1608
+    notes: "undead"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blue_dappled_prereni:
+    rank:
+      min: 180
+      max: 225
+    rank_confidence: high
+    critters:
+      - "blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1619
+    notes: "Crazy swarm, packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blue_prereni_stones:
+    rank:
+      min: 190
+      max: 250
+    rank_confidence: high
+    critters:
+      - "blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1625
+    notes: "premie only rooms, slightly higher level than the standard ones"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  windbags_upper:
+    rank:
+      min: 210
+      max: 300
+    rank_confidence: high
+    critters:
+      - "windbag"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1630
+    notes: "Construct"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  elder_blue_dappled_prereni:
+    rank:
+      min: 250
+      max: 300
+    rank_confidence: high
+    critters:
+      - "elder blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1640
+    notes: "Crazy swarm, packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  elder_prereni_stones:
+    rank:
+      min: 260
+      max: 300
+    rank_confidence: high
+    critters:
+      - "elder blue-dappled prereni"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1646
+    notes: "premie only rooms, slightly higher level than the standard"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  beltunumshi:
+    rank:
+      min: 225
+      max: 350
+    rank_confidence: high
+    critters:
+      - "beltunumshi"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1651
+    notes: "construct"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_peccary:
+    rank:
+      min: 225
+      max: 300
+    rank_confidence: high
+    critters:
+      - "peccary"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1662
+    notes: "horses & antelope sometimes also present"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_peccary_plus:
+    rank:
+      min: 225
+      max: 300
+    rank_confidence: high
+    critters:
+      - "peccary"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1675
+    notes: "these appraise slightly higher"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  beltunumshi_thicket:
+    rank:
+      min: 225
+      max: 350
+    rank_confidence: high
+    critters:
+      - "beltunumshi"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1686
+    notes: "same beltunumshi construct, estate holder only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_clouded_arzumos:
+    rank:
+      min: 230
+      max: 340
+    rank_confidence: high
+    critters:
+      - "clouded arzumos"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1693
+    notes: "also antelopes"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_clouded_arzumos_plus:
+    rank:
+      min: 230
+      max: 340
+    rank_confidence: high
+    critters:
+      - "clouded arzumos"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1703
+    notes: "these appraise slightly higher"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shard_gryphons:
+    rank:
+      min: 300
+      max: 350
+    rank_confidence: medium
+    critters:
+      - "baby forest gryphon"
+      - "young forest gryphon"
+      - "fledgling forest gryphon"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1717
+    notes: "Good swarm, few rooms usually full"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  shard_gryphons1:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1723
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  shard_gryphons2:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1728
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  adanf_warriors_and_mages:
+    rank:
+      min: 250
+      max: 325
+    rank_confidence: medium
+    critters:
+      - "adan'f shadow mage"
+      - "adan'f blood warrior"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1738
+    notes: "Spawn is hit or miss | You'll need to remove warrior's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  red_gremlins:
+    rank:
+      min: 280
+      max: 410
+    rank_confidence: high
+    critters:
+      - "red-bristled gremlin"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1756
+    notes: "premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blade_spiders:
+    rank:
+      min: 300
+      max: 400
+    rank_confidence: high
+    critters:
+      - "giant blade spider"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1764
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cloud_rats:
+    rank:
+      min: 325
+      max: 425
+    rank_confidence: high
+    critters:
+      - "cloud rat"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1771
+    notes: "Ranks estimate based on Creature Level 63-67. | Room 16538 is either no spawn/low spawn, but critters still wander in"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cloud_rats_hollow:
+    rank:
+      min: 325
+      max: 425
+    rank_confidence: high
+    critters:
+      - "cloud rat"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1780
+    notes: "same rats - Estate Holder Only"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dragon_priests_1:
+    rank:
+      min: 350
+      max: 500
+    rank_confidence: high
+    critters:
+      - "robed dragon priest(ess)"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1785
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dragon_priests_2:
+    rank:
+      min: 350
+      max: 500
+    rank_confidence: high
+    critters:
+      - "robed dragon priest(ess)"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1811
+    notes: "slightly higher version"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  adanf_spirit_dancers:
+    rank:
+      min: 380
+      max: 600
+    rank_confidence: high
+    critters:
+      - "adan'f spirit dancer"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1828
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  plague_wraiths:
+    rank:
+      min: 450
+      max: 630
+    rank_confidence: high
+    critters:
+      - "vile plague wraith"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1840
+    notes: "Need good stats/skills to defend against magics"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ssugi_malchata:
+    rank:
+      min: 500
+      max: 700
+    rank_confidence: high
+    critters:
+      - "s'sugi malchata"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1866
+    notes: "Caution: casts a strong fireball"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bulls_plateau:
+    rank:
+      min: 550
+      max: 750
+    rank_confidence: high
+    critters:
+      - "storm bull"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1875
+    notes: "Slightly stronger than the Leth version - creature level 107 - 111"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bulls_vale:
+    rank:
+      min: 600
+      max: 750
+    rank_confidence: high
+    critters:
+      - "storm bull"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1888
+    notes: "Strongest of the Storm Bulls - creature level 111 - 115 | Estate Holder only BUT Can bring non-esate holder hunting buddies in a group!!"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_wyverns:
+    rank:
+      min: 600
+      max: 900
+    rank_confidence: high
+    critters:
+      - "young wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1896
+    notes: "Incredible swarm, usually busy | Need high reflex to avoid poison stinger"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_wyverns_track:
+    rank:
+      min: 600
+      max: 900
+    rank_confidence: high
+    critters:
+      - "young wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1909
+    notes: "same wyverns, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  juvenile_wyverns:
+    rank:
+      min: 700
+      max: 1100
+    rank_confidence: high
+    critters:
+      - "juvenile wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1919
+    notes: "Good swarm usually, need high reflex to avoid | fire breath. You'll need to repair more often"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  juvenile_wyverns_valley:
+    rank:
+      min: 700
+      max: 1100
+    rank_confidence: high
+    critters:
+      - "juvenile wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1935
+    notes: "same juvie wyverns, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  telga_orek:
+    rank:
+      min: 900
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "telga orek"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1942
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  adult_wyverns:
+    rank:
+      min: 1000
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "adult wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1951
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  archons:
+    rank:
+      min: 1200
+      max: 1650
+    rank_confidence: high
+    critters:
+      - "ice archon"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1964
+    notes: "Good boxes, toughest in game. | Stomping maneuver which will break legs."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  archons_cliffs:
+    rank:
+      min: 1200
+      max: 1650
+    rank_confidence: high
+    critters:
+      - "ice archon"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1976
+    notes: "Good boxes, toughest in game. | Stomping maneuver which will break legs. | Exact same archons, these are the cliff rooms, which break Hunt, and | generally act \"weird\""
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  adanf_blademasters:
+    rank:
+      min: 1500
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "elder adan'f blademaster"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1984
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  adanf_sorcerers:
+    rank:
+      min: 1500
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "elder adan'f sorcerer"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 1999
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bone_wyverns:
+    rank:
+      min: 1500
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "bone wyvern"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    source_line: 2020
+    notes: "Toughest critter in DR. These are absolutely no joke! | Very powerful necromantic magic, hunt here at your own risk | - You will need extensive shield skill to avoid bloodburst | - You will need magic blocking abilities to avoid siphon vit | Can pick you up and drop you, massive bleders, broken legs | - Use wings to help assist in avoiding this"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  heggarangi_frog_riverhaven:
+    rank:
+      min: 0
+      max: 26
+    rank_confidence: high
+    critters:
+      - "heggarangi frog"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2035
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  zombie_goblin_riverhaven:
+    rank:
+      min: 5
+      max: 35
+    rank_confidence: high
+    critters:
+      - "zombie goblin"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2041
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  scarlet_crayfish_riverhaven:
+    rank:
+      min: 15
+      max: 38
+    rank_confidence: high
+    critters:
+      - "scarlet crayfish"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2049
+    notes: "On the map, but didn't see any spawn."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  wildland_goblin_riverhaven:
+    rank:
+      min: 17
+      max: 42
+    rank_confidence: high
+    critters:
+      - "wildland goblin"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2055
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  tortured_souls_riverhaven:
+    rank:
+      min: 16
+      max: 45
+    rank_confidence: high
+    critters:
+      - "tortured soul"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2067
+    notes: "incorporeal"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  wood_trolls_theren:
+    rank:
+      min: 36
+      max: 42
+    rank_confidence: medium
+    critters:
+      - "wood troll"
+      - "kelpie"
+      - "cougar"
+      - "wild boar"
+    province: "Therengia"
+    towns:
+      - "Theren"
+    access: plain
+    source_line: 2079
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  grass_eels_riverhaven:
+    rank:
+      min: 25
+      max: 50
+    rank_confidence: medium
+    critters:
+      - "grass eel"
+      - "goblin shaman"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2092
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  arbelog_ram_bear_riverhaven:
+    rank:
+      min: 50
+      max: 59
+    rank_confidence: medium
+    critters:
+      - "black bear"
+      - "meadow ram"
+      - "arbelog"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2109
+    notes: "Swarmy"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  moltspun_boggles:
+    rank:
+      min: 55
+      max: 80
+    rank_confidence: high
+    critters:
+      - "moltspun boggle"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2119
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  boar_boobrie_riverhaven:
+    rank:
+      min: 50
+      max: 42
+    rank_confidence: low
+    rank_review: true
+    rank_review_reason: "multi-link A2 merge inverted (max_of_mins=50 > min_of_maxes=42); needs human review"
+    critters:
+      - "wild boar"
+      - "boobrie"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2126
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: low
+  dusk_ogres:
+    rank:
+      min: 60
+      max: 75
+    rank_confidence: high
+    critters:
+      - "dusk ogre"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2133
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  dark_fiends:
+    rank:
+      min: 70
+      max: 90
+    rank_confidence: high
+    critters:
+      - "dark fiend"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2142
+    notes: "incorp undead, not very swarmy"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  wolf_spider:
+    rank:
+      min: 70
+      max: 98
+    rank_confidence: high
+    critters:
+      - "giant wolf spider"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2154
+    notes: "under Theren keep"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  morah_vines:
+    rank:
+      min: 70
+      max: 120
+    rank_confidence: medium
+    critters:
+      - "morah vine"
+      - "morah creeper"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2169
+    notes: "good swarm but long RT to get in here"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  blood_wolves:
+    rank:
+      min: 75
+      max: 90
+    rank_confidence: high
+    critters:
+      - "blood wolf"
+    province: "Therengia"
+    towns:
+      - "Theren"
+    access: plain
+    source_line: 2180
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  river_caiman:
+    rank:
+      min: 75
+      max: 125
+    rank_confidence: high
+    critters:
+      - "river caiman"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2193
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  sand_spider:
+    rank:
+      min: 80
+      max: 100
+    rank_confidence: high
+    critters:
+      - "sand spider"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2203
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  young_ogres_riverhaven:
+    rank:
+      min: 80
+      max: 120
+    rank_confidence: high
+    critters:
+      - "young ogre"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2213
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  marauders:
+    rank:
+      min: 100
+      max: 125
+    rank_confidence: high
+    critters:
+      - "gypsy marauder"
+    province: "Therengia"
+    towns:
+      - "Theren"
+    access: plain
+    source_line: 2225
+    notes: "Good spawn"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  piruati_serpent:
+    rank:
+      min: 100
+      max: 150
+    rank_confidence: high
+    critters:
+      - "piruati serpent"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2235
+    notes: "premie only rooms, spawn only serpents, not vipers"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  throne_bluebelly_crocs:
+    rank:
+      min: 100
+      max: 140
+    rank_confidence: high
+    critters:
+      - "blue-belly crocodile"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2241
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  money_grubbers:
+    rank:
+      min: 100
+      max: 150
+    rank_confidence: high
+    critters:
+      - "miserly moneygrubber"
+      - "troublesome tightwad"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2248
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  shifty_eyed_skinflints:
+    rank:
+      min: 100
+      max: 150
+    rank_confidence: high
+    critters:
+      - "shifty-eyed skinflint"
+      - "pugnacious pinchfist"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2264
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  swamp_troll_riverhaven:
+    rank:
+      min: 120
+      max: 160
+    rank_confidence: medium
+    critters:
+      - "lesser sluagh"
+      - "swamp troll"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2272
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  dark_spirits_theren:
+    rank:
+      min: 130
+      max: 170
+    rank_confidence: high
+    critters:
+      - "dark spirit"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2276
+    notes: "just this one room does not need a lightsource - venture further at your own risk"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  alley_thug:
+    rank:
+      min: 140
+      max: 230
+    rank_confidence: high
+    critters:
+      - "alley thug"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2279
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  vipers_and_serpents:
+    rank:
+      min: 125
+      max: 150
+    rank_confidence: medium
+    critters:
+      - "giant thicket viper"
+      - "piruati serpent"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2289
+    notes: "Vipers spit poison, so you need a shield. Both critters in area."
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  heggarangi_boar:
+    rank:
+      min: 150
+      max: 200
+    rank_confidence: high
+    critters:
+      - "heggarangi boar"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2295
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  clay_soldier:
+    rank:
+      min: 175
+      max: 250
+    rank_confidence: high
+    critters:
+      - "grey clay soldier"
+    province: "Therengia"
+    towns:
+      - "Langenfirth"
+    access: plain
+    source_line: 2302
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  clay_mage:
+    rank:
+      min: 175
+      max: 250
+    rank_confidence: high
+    critters:
+      - "grey clay mage"
+    province: "Therengia"
+    towns:
+      - "Langenfirth"
+    access: plain
+    source_line: 2310
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  clay_archer:
+    rank:
+      min: 180
+      max: 240
+    rank_confidence: high
+    critters:
+      - "grey clay archer"
+    province: "Therengia"
+    towns:
+      - "Langenfirth"
+    access: plain
+    source_line: 2317
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_scouts:
+    rank:
+      min: 160
+      max: 220
+    rank_confidence: high
+    critters:
+      - "orc scout"
+      - "vicious warcat"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2329
+    notes: "warcats calm, need 35 disc | 19097 - Unmappable room | Hit or miss spawns, boxes and skins"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  small_peccary_and_swamp_trolls:
+    rank:
+      min: 175
+      max: 235
+    rank_confidence: medium
+    critters:
+      - "small peccary"
+      - "swamp troll"
+    province: "Therengia"
+    towns:
+      - "Langenfirth"
+    access: plain
+    source_line: 2339
+    notes: "Great swarm"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  angiswaerd_hatchling:
+    rank:
+      min: 180
+      max: 250
+    rank_confidence: high
+    critters:
+      - "angiswaerd hatchling"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2355
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_bandits:
+    rank:
+      min: 180
+      max: 317
+    rank_confidence: high
+    critters:
+      - "orc bandit"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2366
+    notes: "warcats calm, need 35 disc | Hit or miss spawn, boxes and skins"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  dark_sprites:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters:
+      - "dark sprite"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2382
+    notes: "premie only rooms"
+    provenance:
+      rank: none
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  gryphons0:
+    rank:
+      min: 250
+      max: 350
+    rank_confidence: high
+    critters:
+      - "baby forest gryphon"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2403
+    notes: "Crazy swarm throughout, heavily farmed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  gryphons1:
+    rank:
+      min: 250
+      max: 450
+    rank_confidence: medium
+    critters: []
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2408
+    notes: "first two tier gryphons in Rossman's Landing                         250-450"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: medium
+  gryphons3:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2417
+    notes: "FLY IN THE AIR"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: low
+  gryphons4:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2431
+    notes: "FLY IN THE AIR"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: low
+  dusky_basilisk:
+    rank:
+      min: 270
+      max: 460
+    rank_confidence: high
+    critters:
+      - "lesser dusky-scaled basilisk"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2444
+    notes: "Occasional wandering Maelshyvean_shadow_beast"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  river_boa:
+    rank:
+      min: 275
+      max: 350
+    rank_confidence: high
+    critters:
+      - "river boa"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2450
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_reivers:
+    rank:
+      min: 280
+      max: 350
+    rank_confidence: high
+    critters:
+      - "orc reiver"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2456
+    notes: "warcats calm, need 35 disc | Great swarm, boxes and skins"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  zombie_nomads:
+    rank:
+      min: 260
+      max: 410
+    rank_confidence: high
+    critters:
+      - "zombie nomad"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2468
+    notes: "Muspari, through the velaka bescort zone"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  bristle_peccs:
+    rank:
+      min: 280
+      max: 405
+    rank_confidence: high
+    critters:
+      - "bristle-backed peccary"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2478
+    notes: "Great swarm, in town with justice"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  greater_sluagh:
+    rank:
+      min: 280
+      max: 380
+    rank_confidence: low
+    critters:
+      - "greater sluagh"
+      - "greater shadow hound"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2488
+    notes: "Must have Protection from Evil active at all times or HIGH Risk of Death | Undead, Heavy Swarm, use caution at all times here"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: low
+  marbled_angiswaerd:
+    rank:
+      min: 300
+      max: 400
+    rank_confidence: high
+    critters:
+      - "marbled angiswaerd"
+    province: "Therengia"
+    towns:
+      - "Throne_City"
+    access: plain
+    source_line: 2496
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  tree_snakes_spiders:
+    rank:
+      min: 300
+      max: 400
+    rank_confidence: medium
+    critters:
+      - "birdcatcher spider"
+      - "tree snake"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2506
+    notes: "Snakes by day, Spiders by night - good swarm, puncture resist, poisonous"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  gam_chaga:
+    rank:
+      min: 300
+      max: 450
+    rank_confidence: high
+    critters:
+      - "gam chaga"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2519
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  shadow_beasts:
+    rank:
+      min: 320
+      max: 650
+    rank_confidence: high
+    critters:
+      - "maelshyvean shadow beast"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2527
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_raiders:
+    rank:
+      min: 365
+      max: 450
+    rank_confidence: high
+    critters:
+      - "orc raider"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2537
+    notes: "lower end raiders downstairs mixed with reivers"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  isundjen_conjurers:
+    rank:
+      min: 360
+      max: 500
+    rank_confidence: high
+    critters:
+      - "isundjen conjurer"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2545
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_raiders_upstairs:
+    rank:
+      min: 380
+      max: 450
+    rank_confidence: high
+    critters:
+      - "orc raider"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2553
+    notes: "higher end raiders upstairs raiders, highly rare chief"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  orc_chiefs:
+    rank:
+      min: 400
+      max: 500
+    rank_confidence: high
+    critters:
+      - "orc clan-chief"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2563
+    notes: "further upstairs, raiders with high spawn of clan chiefs | Barb warhorn = tons of chiefs"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  voltaic_custodian:
+    rank:
+      min: 450
+      max: 625
+    rank_confidence: high
+    critters:
+      - "lesser voltaic custodian"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2568
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cinder_beasts:
+    rank:
+      min: 450
+      max: 600
+    rank_confidence: high
+    critters:
+      - "maelshyvean cinder beast"
+    province: "Therengia"
+    towns:
+      - "Riverhaven"
+    access: plain
+    source_line: 2576
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  dryanoxie:
+    rank:
+      min: 475
+      max: 680
+    rank_confidence: medium
+    critters: []
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2601
+    notes: "No elanthipeida page yet - dryanoxie                                 475-680? (lvl 85 +/- 2)"
+    provenance:
+      rank: comment_freetext
+      critters: none
+      province: banner
+      towns: none
+    confidence: medium
+  sky_giants:
+    rank:
+      min: 500
+      max: 700
+    rank_confidence: high
+    critters:
+      - "sky giant"
+    province: "Therengia"
+    towns:
+      - "Theren"
+    access: plain
+    source_line: 2608
+    notes: "Good for boxes, lightning/wind magic"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  bronze_leucro:
+    rank:
+      min: 575
+      max: 800
+    rank_confidence: low
+    critters:
+      - "bronze leucro"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2620
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  ashu_hhinvi:
+    rank:
+      min: 500
+      max: 700
+    rank_confidence: high
+    critters:
+      - "ashu hhinvi"
+    province: "Therengia"
+    towns:
+      - "Muspari"
+    access: plain
+    source_line: 2628
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  clay_slayer_fibrous:
+    rank:
+      min: 515
+      max: 725
+    rank_confidence: high
+    critters:
+      - "fibrous clay slayer"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2636
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  clay_slayer:
+    rank:
+      min: 625
+      max: 925
+    rank_confidence: high
+    critters:
+      - "clay slayer"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2642
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  clay_slayer_glazed:
+    rank:
+      min: 750
+      max: 1200
+    rank_confidence: high
+    critters:
+      - "glazed clay slayer"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2648
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  forager_ghoul:
+    rank:
+      min: 600
+      max: 800
+    rank_confidence: high
+    critters:
+      - "forager ghoul"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2655
+    notes: "New as of 5/12/21! Undead, knows warstomp, throws leeches"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  forager_wights:
+    rank:
+      min: 750
+      max: 1000
+    rank_confidence: high
+    critters:
+      - "forager wight"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2671
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  thornkin:
+    rank:
+      min: 1400
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "thornkin"
+    province: "Therengia"
+    towns: []
+    access: plain
+    source_line: 2681
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  maidens_tress:
+    rank:
+      min: 125
+      max: 210
+    rank_confidence: high
+    critters:
+      - "writhing maiden's tress"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2694
+    notes: "Spawn increased TT 127 - 7/26/22"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  matron_tress:
+    rank:
+      min: 175
+      max: 250
+    rank_confidence: high
+    critters:
+      - "matron's tress"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2703
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  young_cave_trolls:
+    rank:
+      min: 75
+      max: 170
+    rank_confidence: high
+    critters:
+      - "young cave troll"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2713
+    notes: "Skill range may be old - can confirm worked fantastic 100-135"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bloodvines_hib:
+    rank:
+      min: 120
+      max: 195
+    rank_confidence: high
+    critters:
+      - "vela'tohr bloodvine"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2717
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  mutant_togball:
+    rank:
+      min: 130
+      max: 175
+    rank_confidence: high
+    critters:
+      - "mutant togball"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2731
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  sickly_blightwater_nyads:
+    rank:
+      min: 160
+      max: 245
+    rank_confidence: high
+    critters:
+      - "sickly blightwater nyad"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2741
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  decaying_blightwater_nyads:
+    rank:
+      min: 170
+      max: 250
+    rank_confidence: high
+    critters:
+      - "decaying blightwater nyad"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2758
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  frostweyr_bears:
+    rank:
+      min: 175
+      max: 225
+    rank_confidence: high
+    critters:
+      - "frostweyr bear"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2772
+    notes: "Knockback attack to prone, stunned, and another room | You'll need to remove bear's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blight_ogre_stumpy:
+    rank:
+      min: 170
+      max: 240
+    rank_confidence: high
+    critters:
+      - "stumpy blight ogre"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2785
+    notes: "Reasonable step up from young_blue_dappled_prereni | Use shield shield/weapon so harder to hit at level"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blight_ogre_giant:
+    rank:
+      min: 180
+      max: 270
+    rank_confidence: high
+    critters:
+      - "giant blight ogre"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2791
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ice_adders:
+    rank:
+      min: 200
+      max: 300
+    rank_confidence: high
+    critters:
+      - "sinuous ice adder"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2796
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blue_ghasts_1:
+    rank:
+      min: 280
+      max: 430
+    rank_confidence: high
+    critters:
+      - "icy blue ghast"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2805
+    notes: "4 tiers, each 'slightly' tougher than the first"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  blue_ghasts_2:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2812
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  blue_ghasts_3:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2823
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  blue_ghasts_4:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2829
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  frost_angiswaerd:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters:
+      - "frost angiswaerd"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2837
+    notes: "Warning, area is icy, and you will slip and hurt yourself if you move too fast!"
+    provenance:
+      rank: none
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  shalswar:
+    rank:
+      min: 400
+      max: 400
+    rank_confidence: medium
+    critters:
+      - "armored shalswar"
+      - "dragon priest sentinel"
+      - "dragon priest zealot"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2847
+    notes: "Zealots (and possibly Sentinels) fire sleep arrows which cause | problems for combat trainer. recommended to add \"wake: 10\" to buff_nonspells"
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  juggernauts:
+    rank:
+      min: 400
+      max: 500
+    rank_confidence: high
+    critters:
+      - "dragon priest juggernaut"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2857
+    notes: "Add disarm orb: 60 (or less) to buff_nonspells:"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  black_marble_gargoyles:
+    rank:
+      min: 300
+      max: 440
+    rank_confidence: high
+    critters:
+      - "black marble gargoyle"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2864
+    notes: "Train some skills way higher than 440"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  mountain_giants:
+    rank:
+      min: 375
+      max: 550
+    rank_confidence: high
+    critters:
+      - "mountain giant"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2878
+    notes: "Boxes and skins, decent swarm, often packed"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dragon_priest_zealots:
+    rank:
+      min: 400
+      max: 520
+    rank_confidence: high
+    critters:
+      - "dragon priest zealot"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2895
+    notes: "Zealots fire sleep arrows which cause problems for combat trainer. | recommended to add \"wake: 10\" to buff_nonspells"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  zombie_stompers:
+    rank:
+      min: 460
+      max: 625
+    rank_confidence: high
+    critters:
+      - "zombie stomper"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2902
+    notes: "Enraged tusky's NO LONGER come by and ruin your day"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  black_goblins:
+    rank:
+      min: 460
+      max: 720
+    rank_confidence: high
+    critters:
+      - "black goblin"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2911
+    notes: "Need 520+ shield & evasion to avoid thrown axes which lodge"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  black_apes:
+    rank:
+      min: 490
+      max: 750
+    rank_confidence: high
+    critters:
+      - "black ape"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2922
+    notes: "Swarms well most of the time | Add 'tooth' to loot_additions, can be sold like gems"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  zombie_maulers:
+    rank:
+      min: 500
+      max: 670
+    rank_confidence: high
+    critters:
+      - "zombie mauler"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2944
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  tusky:
+    rank:
+      min: 490
+      max: 800
+    rank_confidence: high
+    critters:
+      - "enraged tusky"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2954
+    notes: "Large critter range 104-114 - approach with care | Now spawn only in the new tusky pens - Undead"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  misty_black_zephyr:
+    rank:
+      min: 525
+      max: 760
+    rank_confidence: high
+    critters:
+      - "misty black zephyr"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2963
+    notes: "New creature, undead and incorp"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  zombie_headsplitters:
+    rank:
+      min: 600
+      max: 725
+    rank_confidence: high
+    critters:
+      - "zombie head-splitter"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2975
+    notes: "Crazy box droppers, crazy swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  wretch_and_hag:
+    rank:
+      min: 700
+      max: 1000
+    rank_confidence: low
+    critters:
+      - "bony wind wretch"
+      - "ragged wind hag"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 2987
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  assassins:
+    rank:
+      min: 750
+      max: 1100
+    rank_confidence: high
+    critters:
+      - "dragon priest assassin"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3002
+    notes: "Fire crossbows which lodge bolts"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  assassins_rack:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3015
+    notes: "same assassins, premie rooms"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  dinnsehencha:
+    rank:
+      min: 800
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "dinnsehencha"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3020
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dinnsehencha_grotto:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3028
+    notes: "same dinn, premie only rooms"
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  banshees:
+    rank:
+      min: 900
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "lesser north wind banshee"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3033
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  intercessor:
+    rank:
+      min: 950
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "dragon priest intercessor"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3043
+    notes: "Tactical hamstring manuever"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  vicious_intercessor:
+    rank:
+      min: 1100
+      max: 1600
+    rank_confidence: high
+    critters:
+      - "vicious dragon priest intercessor"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3055
+    notes: "premie only rooms, higher level than the standard ones"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  jeol_moradu:
+    rank:
+      min: 1400
+      max: 1700
+    rank_confidence: high
+    critters:
+      - "jeol moradu"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3062
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  fuligin_moths_velatohr:
+    rank:
+      min: 950
+      max: 1400
+    rank_confidence: high
+    critters:
+      - "umbral moth"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3073
+    notes: "Great swarm - tiny bit longer range than crossing fulgin"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  void_moths_kaal:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "void black umbral moth"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3082
+    notes: "Incredible swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shadowfrost_moths:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "shadowfrost moth"
+    province: "Forfedhdar"
+    towns: []
+    access: plain
+    source_line: 3090
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  sandsprites:
+    rank:
+      min: 50
+      max: 73
+    rank_confidence: high
+    critters:
+      - "sand sprite"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3104
+    notes: "Decent boxes"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  qi_blood_wolves:
+    rank:
+      min: 75
+      max: 65
+    rank_confidence: low
+    rank_review: true
+    rank_review_reason: "multi-link A2 merge inverted (max_of_mins=75 > min_of_maxes=65); needs human review"
+    critters:
+      - "blood wolf"
+      - "bobcat"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3120
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  moss_meys:
+    rank:
+      min: 90
+      max: 135
+    rank_confidence: high
+    critters:
+      - "moss mey"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3129
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  silver_leucros_ratha:
+    rank:
+      min: 95
+      max: 110
+    rank_confidence: high
+    critters:
+      - "silver leucro"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3136
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  razortusk_boars:
+    rank:
+      min: 100
+      max: 130
+    rank_confidence: high
+    critters:
+      - "adult razortusk boar"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3144
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  nightweaver_unyun:
+    rank:
+      min: 100
+      max: 188
+    rank_confidence: high
+    critters:
+      - "nightweaver unyun"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3154
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snow_goblins_1:
+    rank:
+      min: 110
+      max: 140
+    rank_confidence: high
+    critters:
+      - "snow goblin"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3175
+    notes: "Good box droppers, good swarm"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snow_goblins_2:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3182
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  snow_goblins_3:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3194
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  crimson_merrows:
+    rank:
+      min: 120
+      max: 150
+    rank_confidence: high
+    critters:
+      - "merrows"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3201
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  bawdy_swain:
+    rank:
+      min: 120
+      max: 150
+    rank_confidence: high
+    critters:
+      - "bawdy swain"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3207
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  ghoul_crow:
+    rank:
+      min: 130
+      max: 175
+    rank_confidence: high
+    critters:
+      - "ghoul crow"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3218
+    notes: "You'll need to remove crow's from the ignored_npcs: list otherwise it | just sit there not hunting."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  kra_hei_hatchlings:
+    rank:
+      min: 130
+      max: 210
+    rank_confidence: high
+    critters:
+      - "kra'hei hatchling"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3224
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  yvhh:
+    rank:
+      min: 160
+      max: 200
+    rank_confidence: high
+    critters:
+      - "yvhh la'tami"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3242
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  nightreaver_unyn:
+    rank:
+      min: 180
+      max: 225
+    rank_confidence: high
+    critters:
+      - "nightreaver unyn"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3258
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ochre_la_heke:
+    rank:
+      min: 150
+      max: 240
+    rank_confidence: high
+    critters:
+      - "ochre la'heke"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3272
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  frostweaver:
+    rank:
+      min: 180
+      max: 260
+    rank_confidence: high
+    critters:
+      - "frostweaver"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3283
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  shadow_master:
+    rank:
+      min: 220
+      max: null
+    rank_confidence: low
+    critters:
+      - "gaunt shadow master"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3295
+    notes: "Good safe room: 9994"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: low
+  peccary:
+    rank:
+      min: 225
+      max: 300
+    rank_confidence: high
+    critters:
+      - "peccary"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3300
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  caracals:
+    rank:
+      min: 225
+      max: 345
+    rank_confidence: high
+    critters:
+      - "caracal"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3314
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  nipoh_oshu:
+    rank:
+      min: 240
+      max: 350
+    rank_confidence: high
+    critters:
+      - "nipoh oshu"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3322
+    notes: "3 different areas here, needs to be broken up eventually"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  spectral_pirate:
+    rank:
+      min: 250
+      max: 325
+    rank_confidence: high
+    critters:
+      - "spectral pirate"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3342
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  umbramagus:
+    rank:
+      min: 250
+      max: 340
+    rank_confidence: high
+    critters:
+      - "emaciated umbramagus"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3348
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  retan_dolomar:
+    rank:
+      min: 260
+      max: 410
+    rank_confidence: high
+    critters:
+      - "retan dolomar"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3357
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  graverobbers_and_ghoul_ravens:
+    rank:
+      min: 270
+      max: 380
+    rank_confidence: medium
+    critters:
+      - "graverobber"
+      - "ghoul raven"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3368
+    notes: null
+    provenance:
+      rank: comment_multilink_a2
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: medium
+  bristle_back_peccary_mriss:
+    rank:
+      min: 280
+      max: 405
+    rank_confidence: high
+    critters:
+      - "bristle-backed peccary"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3377
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  wir_dinego:
+    rank:
+      min: 300
+      max: 400
+    rank_confidence: high
+    critters:
+      - "wir dinego"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3387
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dobek:
+    rank:
+      min: 300
+      max: 450
+    rank_confidence: high
+    critters:
+      - "dobek moruryn"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3398
+    notes: "underground, long stun on entry (no danger), poison stingers, Ratha | many duplicate rooms and maze rooms - please do not add rooms or edit mapdb"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  snaer_hafwa:
+    rank:
+      min: 350
+      max: 500
+    rank_confidence: high
+    critters:
+      - "snaer hafwa"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3406
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  spiny_bloodfish:
+    rank:
+      min: 360
+      max: null
+    rank_confidence: low
+    critters:
+      - "spiny bloodfish"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3413
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  lun_shele:
+    rank:
+      min: 370
+      max: 530
+    rank_confidence: high
+    critters:
+      - "lun'shele trekhalo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3421
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  asaren_celpeze_1:
+    rank:
+      min: 400
+      max: 620
+    rank_confidence: high
+    critters:
+      - "asaren celpeze"
+    province: "Qi'Reshalia"
+    towns:
+      - "Ratha"
+    access: plain
+    source_line: 3431
+    notes: "add ambergris to loot_additions"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: hunting_areas_by_town
+    confidence: high
+  asaren_celpeze_southern:
+    rank:
+      min: 450
+      max: 620
+    rank_confidence: high
+    critters:
+      - "asaren celpeze"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3445
+    notes: "add ambergris to loot_additions"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  asaren_celpeze_northern:
+    rank:
+      min: 550
+      max: 800
+    rank_confidence: high
+    critters:
+      - "asaren celpeze"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3455
+    notes: "add ambergris to loot_additions"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  juvenile_armadillos:
+    rank:
+      min: 600
+      max: 740
+    rank_confidence: high
+    critters:
+      - "juvenile desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3468
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  juvie_armadillos_tavayon:
+    rank:
+      min: 600
+      max: 740
+    rank_confidence: high
+    critters:
+      - "juvenile desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3476
+    notes: "same armadillos, premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  adult_armadillos_tavayon:
+    rank:
+      min: 725
+      max: 1000
+    rank_confidence: high
+    critters:
+      - "adult desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3486
+    notes: "premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  elder_armadillos_tavayon:
+    rank:
+      min: 700
+      max: 1100
+    rank_confidence: high
+    critters:
+      - "elder desert armadillo"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3493
+    notes: "premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  gale_drakes:
+    rank:
+      min: 950
+      max: 1300
+    rank_confidence: high
+    critters:
+      - "gale drake"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3501
+    notes: "strong elemental magic, outside Ratha"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  hurricane_drakes:
+    rank:
+      min: 1200
+      max: 1600
+    rank_confidence: high
+    critters:
+      - "hurricane drake"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3510
+    notes: "Heavy magics, uses war stomp, outside Ratha"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cinderwing_harpy:
+    rank:
+      min: 1450
+      max: 1750
+    rank_confidence: high
+    critters:
+      - "cinderwing harpy"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3518
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  cinderwing_harpy_premie:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3525
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  bawdy_swain_hara:
+    rank:
+      min: 120
+      max: 150
+    rank_confidence: high
+    critters:
+      - "bawdy swain"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3534
+    notes: "Technically Qi but at the end of the universe so by itself for convenience."
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  clouded_arzumos_hara:
+    rank:
+      min: 230
+      max: 340
+    rank_confidence: high
+    critters:
+      - "clouded arzumos"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3540
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  corsair_hara:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters:
+      - "corsair"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3550
+    notes: "in town - interesting mechanics - make sure to read Wiki | guestimated around same size as bawdy_swains - approach with caution"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: low
+  heggarangi_boar_hara:
+    rank:
+      min: 150
+      max: 200
+    rank_confidence: high
+    critters:
+      - "heggarangi boar"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3557
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  lachmate_hara:
+    rank:
+      min: 150
+      max: 250
+    rank_confidence: high
+    critters:
+      - "lachmate"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3565
+    notes: "Strong currents in these rooms - need ~200 athletics for easy movement"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  helela_hara:
+    rank:
+      min: 250
+      max: 360
+    rank_confidence: high
+    critters:
+      - "sleek hele'la"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3571
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  piranha_hara:
+    rank:
+      min: 275
+      max: 420
+    rank_confidence: high
+    critters:
+      - "piranha"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3578
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  retan_hara:
+    rank:
+      min: 260
+      max: 410
+    rank_confidence: high
+    critters:
+      - "retan dolomar"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3586
+    notes: "heavy webs in the area can proc RT between rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  river_boa_hara:
+    rank:
+      min: 275
+      max: 350
+    rank_confidence: high
+    critters:
+      - "river boa"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3592
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  sailfin_hara:
+    rank:
+      min: 300
+      max: 500
+    rank_confidence: high
+    critters:
+      - "sailfin lizard"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3600
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  spider_crab_hara:
+    rank:
+      min: 300
+      max: 450
+    rank_confidence: high
+    critters:
+      - "spider crab"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3607
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  telga_moradu_hara:
+    rank:
+      min: 360
+      max: 400
+    rank_confidence: high
+    critters:
+      - "telga moradu"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3614
+    notes: "need ~120 athletics to enter area"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scaly_seordmaor_fornsted:
+    rank:
+      min: 400
+      max: 530
+    rank_confidence: high
+    critters:
+      - "scaly seordmaor"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3622
+    notes: "swarmy, immune to electricity, have strong magics"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scaly_seordmaor_hara:
+    rank:
+      min: null
+      max: null
+    rank_confidence: low
+    critters: []
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    source_line: 3629
+    notes: null
+    provenance:
+      rank: none
+      critters: none
+      province: banner
+      towns: none
+    confidence: low
+  rats_fang:
+    rank:
+      min: 0
+      max: 30
+    rank_confidence: high
+    critters:
+      - "rat"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3641
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  salt_crabs_fang:
+    rank:
+      min: 25
+      max: 42
+    rank_confidence: high
+    critters:
+      - "salt crab"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3646
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  bobcats_fang:
+    rank:
+      min: 65
+      max: 80
+    rank_confidence: high
+    critters:
+      - "spotted bobcat"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3653
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  suw_bizar:
+    rank:
+      min: 70
+      max: 90
+    rank_confidence: high
+    critters:
+      - "suw bizar"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3660
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  kashika_serpents:
+    rank:
+      min: 100
+      max: 160
+    rank_confidence: high
+    critters:
+      - "spotted kashika serpent"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3671
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  quartz_gargs:
+    rank:
+      min: 135
+      max: 190
+    rank_confidence: high
+    critters:
+      - "quartz gargoyle"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3679
+    notes: "premie only rooms"
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  yellow_gremlins:
+    rank:
+      min: 280
+      max: 410
+    rank_confidence: high
+    critters:
+      - "yellow bristled gremlin"
+    province: "Fang Cove"
+    towns: []
+    access: plain
+    source_line: 3692
+    notes: null
+    provenance:
+      rank: comment
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  slyphs:
+    rank:
+      min: 100
+      max: 175
+    rank_confidence: high
+    critters:
+      - "sylph"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    alias_of: "sylphs"
+    source_line: 1559
+    notes: "Construct"
+    provenance:
+      rank: alias
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  dragon_priests:
+    rank:
+      min: 350
+      max: 500
+    rank_confidence: high
+    critters:
+      - "robed dragon priest(ess)"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    alias_of: "dragon_priests_1"
+    source_line: 1826
+    notes: null
+    provenance:
+      rank: alias
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  ssgui_malchata:
+    rank:
+      min: 500
+      max: 700
+    rank_confidence: high
+    critters:
+      - "s'sugi malchata"
+    province: "Ilithi"
+    towns: []
+    access: plain
+    alias_of: "ssugi_malchata"
+    source_line: 1872
+    notes: "Caution: casts a strong fireball"
+    provenance:
+      rank: alias
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
+  scaly_seordmoar_fornsted:
+    rank:
+      min: 400
+      max: 530
+    rank_confidence: high
+    critters:
+      - "scaly seordmaor"
+    province: "Qi'Reshalia"
+    towns: []
+    access: plain
+    alias_of: "scaly_seordmaor_fornsted"
+    source_line: 3628
+    notes: "swarmy, immune to electricity, have strong magics"
+    provenance:
+      rank: alias
+      critters: comment_url_slug
+      province: banner
+      towns: none
+    confidence: high
