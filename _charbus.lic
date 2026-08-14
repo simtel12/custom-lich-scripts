@@ -176,4 +176,86 @@ publisher = Thread.new do
   end
 end
 
+$charbus_requests     = SizedQueue.new(CONFIG['queue_size'])
+$charbus_ping_replies = Queue.new
+$charbus_stopping     = false
+
+def handle_inbound(json)
+  msg = CharBus::Protocol::Envelope.decode(json)
+
+  # Version guard reads id/reply_to from the ENVELOPE, so it can answer a
+  # message whose payload layout it cannot assume (§4.2).
+  if msg[:v] != CharBus::Protocol::VERSION
+    if msg[:reply_to]
+      publish('reply', { 'in_reply_to' => msg[:id], 'error' => 'unsupported_version' },
+              channel: msg[:reply_to])
+    end
+    return
+  end
+
+  verb = msg[:payload]['verb']
+
+  if verb == 'ping'
+    nonce = msg[:payload].dig('args', 'nonce')
+    if msg[:instance] == INSTANCE
+      $charbus_ping_replies << nonce            # our own ping came back
+    elsif msg[:reply_to]
+      publish('reply', { 'in_reply_to' => msg[:id], 'nonce' => nonce,
+                         'instance' => INSTANCE, 'at' => Time.now.to_f },
+              channel: msg[:reply_to])
+    end
+    # A ping from a DIFFERENT instance on our own request channel means a twin.
+    if msg[:instance] != INSTANCE && msg[:from] == CHARACTER
+      respond '--- charbus: WARNING another daemon is live for this character'
+      emit_event('duplicate_daemon', 'other_instance' => msg[:instance])
+    end
+    return
+  end
+
+  msg[:arrived_at] = Time.now.to_f
+  begin
+    $charbus_requests.push(msg, true)
+  rescue ThreadError
+    emit_event('request_failed', 'id' => msg[:id], 'error' => 'queue_full')
+    if msg[:reply_to]
+      publish('reply', { 'in_reply_to' => msg[:id], 'error' => 'queue_full' },
+              channel: msg[:reply_to])
+    end
+  end
+rescue CharBus::Protocol::MalformedEnvelope
+  nil   # unparseable envelope is the only case dropped silently
+end
+
+subscriber = Thread.new do
+  backoff = CONFIG['reconnect_backoff']
+  attempt = 0
+  until $charbus_stopping
+    begin
+      # Plain blocking subscribe, NOT subscribe_with_timeout: the timeout
+      # variant tears down and rebuilds the pubsub connection every cycle,
+      # dropping inbound messages in the gap (§6.4).
+      $charbus_sub.subscribe(REQUEST_CHANNEL) do |on|
+        on.message { |_ch, json| handle_inbound(json) }
+      end
+      attempt = 0
+    rescue IOError, Errno::EBADF
+      break if $charbus_stopping   # deliberate teardown, not a fault
+      attempt += 1
+    rescue StandardError => e
+      break if $charbus_stopping
+      delay = backoff[[attempt, backoff.size - 1].min]
+      attempt += 1
+      respond "--- charbus: subscriber lost (#{e.class}); retrying in #{delay}s"
+      sleep delay
+      begin
+        $charbus_sub = Redis.new(**redis_options(CONFIG))
+        emit_event('bus_reconnected', 'attempt' => attempt)
+        respond '--- charbus: subscriber reconnected'
+      rescue StandardError
+        nil
+      end
+    end
+  end
+end
+
 sleep 1   # replaced by the supervisor loop in Task 10
