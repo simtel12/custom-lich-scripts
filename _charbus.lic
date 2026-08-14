@@ -87,6 +87,30 @@ respond "--- charbus: #{CHARACTER} on #{STATE_CHANNEL} (instance #{INSTANCE})"
 
 before_dying do
   CharBus.daemon_present = false
+  # Publish over a time-bounded connection. before_dying runs inside Lich's
+  # shutdown drain, so an unreachable Redis must not stall ;kill or Lich exit.
+  # redis-client self-heals a connection left dirty by a killed thread
+  # (connection_mixin.rb revalidate), so reuse is safe; the timeout is the
+  # real requirement (§6.7).
+  #
+  # NOT Redis#with(disable_reconnection: true): in redis 5.4.1 (see
+  # redis.rb:96) `with` takes zero arguments -- `def with; yield self; end` --
+  # so calling it with a kwarg raises ArgumentError. The gem's actual
+  # mechanism for this is Redis#without_reconnect(&block), which delegates to
+  # RedisClient#disable_reconnection and yields the raw low-level connection
+  # (not a Redis instance with a #publish method), so the block below calls
+  # back out to $charbus_pub directly instead of using the yielded value.
+  begin
+    $charbus_pub&.without_reconnect do
+      $charbus_pub.publish(STATE_CHANNEL, CharBus::Protocol::Envelope.encode(
+        type: 'event', from: CHARACTER, instance: INSTANCE, seq: next_seq,
+        payload: { 'event' => 'daemon_stopped' }
+      ))
+    end
+  rescue StandardError
+    nil
+  end
+  $charbus_stopping = true
   $charbus_sub&.close rescue nil
   $charbus_pub&.close rescue nil
 end
@@ -149,12 +173,18 @@ def snapshot_slow
   { 'skills' => skills }
 end
 
-ticker = CharBus::Protocol::Ticker.new(
-  fast_interval: CONFIG['heartbeat']['fast_interval'],
-  slow_interval: CONFIG['heartbeat']['slow_interval']
-)
+def run_publisher
+  # Built fresh on every call rather than closing over a top-level local: a
+  # `def` body cannot see top-level locals (the `ticker` local from Task 7 is
+  # exactly the trap called out in the audit), and constructing it here means
+  # a supervisor-triggered restart schedules the next beat relative to the
+  # new thread's own start time instead of replaying a stale schedule left
+  # over from the dead thread.
+  ticker = CharBus::Protocol::Ticker.new(
+    fast_interval: CONFIG['heartbeat']['fast_interval'],
+    slow_interval: CONFIG['heartbeat']['slow_interval']
+  )
 
-publisher = Thread.new do
   loop do
     begin
       ticker.due.each do |tier|
@@ -230,7 +260,7 @@ rescue CharBus::Protocol::MalformedEnvelope
   nil   # unparseable envelope is the only case dropped silently
 end
 
-subscriber = Thread.new do
+def run_subscriber
   backoff = CONFIG['reconnect_backoff']
   attempt = 0
   until $charbus_stopping
@@ -345,7 +375,7 @@ def execute(msg)
   end
 end
 
-worker = Thread.new do
+def run_worker
   loop do
     msg = $charbus_requests.pop
     break if msg.nil?
@@ -366,4 +396,118 @@ worker = Thread.new do
   end
 end
 
-sleep 1   # replaced by the supervisor loop in Task 10
+# Factory so the supervisor can restart any of the three loops by name. Each
+# loop lives in exactly one place -- the def above -- so a restart runs the
+# same code the initial spawn did, not a copy-pasted second definition.
+def spawn_thread(name)
+  case name
+  when :publisher  then Thread.new { run_publisher }
+  when :subscriber then Thread.new { run_subscriber }
+  when :worker     then Thread.new { run_worker }
+  end
+end
+
+threads = {
+  publisher:  spawn_thread(:publisher),
+  subscriber: spawn_thread(:subscriber),
+  worker:     spawn_thread(:worker)
+}
+paused_now = false
+misses = 0
+last_ping = Time.now.to_f
+
+def spin_down(threads)
+  $charbus_stopping = true
+  $charbus_sub&.close rescue nil     # breaks the blocked subscribe
+  # The worker is parked in $charbus_requests.pop, or possibly asleep inside
+  # put/fput/dothistimeout (Script.current) -- none of which it can check a
+  # flag from. It must be killed outright, not asked to stop (§6.5).
+  threads.each_value { |t| t&.kill }
+  $charbus_requests.clear
+  $charbus_pub&.close rescue nil
+end
+
+loop do
+  begin
+    if me.paused? && !paused_now
+      # Announce BEFORE closing, or the silence that follows is
+      # indistinguishable from a crash (§6.5).
+      emit_event('paused')
+      publish('event', { 'event' => 'paused' })
+      sleep 0.1
+      respond '--- charbus: paused; connections closed. ;unpause _charbus to resume.'
+      spin_down(threads)
+      paused_now = true
+
+    elsif !me.paused? && paused_now
+      $charbus_stopping = false
+      $charbus_pub = Redis.new(**redis_options(CONFIG))
+      $charbus_sub = Redis.new(**redis_options(CONFIG))
+      respond '--- charbus: resumed'
+      emit_event('resumed')
+      paused_now = false
+      # Threads are rebuilt by the restart logic below on the next tick.
+      threads.each_key { |k| threads[k] = nil }
+
+    elsif !paused_now
+      # Restart logic only runs when NOT paused (elsif !paused_now, not a bare
+      # else): while paused_now is true, neither of the two branches above
+      # fires either, so this branch -- and the self-ping below -- are both
+      # skipped. Without that guard the supervisor would immediately restart
+      # the very threads the spin-down just stopped, reconnect, and resume
+      # full heartbeats, recreating the false-health state the pause redesign
+      # exists to eliminate (§6.5).
+      threads.each do |name, t|
+        next if t&.alive?
+        respond "--- charbus: restarting #{name} thread"
+        emit_event('thread_restarted', 'thread' => name.to_s)
+        # Re-check immediately after spawning: Script#kill snapshots the thread
+        # list, so a thread created just after the snapshot is never killed and
+        # would outlive the script (§5.1).
+        threads[name] = spawn_thread(name)
+        unless me.running?
+          threads[name]&.kill
+          break
+        end
+      end
+
+      now = Time.now.to_f
+      if now - last_ping >= CONFIG['self_ping_interval']
+        last_ping = now
+        nonce = SecureRandom.hex(4)
+        $charbus_ping_replies.clear
+        publish('request', { 'verb' => 'ping', 'args' => { 'nonce' => nonce } },
+                channel: REQUEST_CHANNEL)
+
+        deadline = now + CONFIG['self_ping_timeout']
+        got = nil
+        # Kernel#sleep returns the (Integer) number of seconds slept, which is
+        # truthy -- not nil -- so the plan's literal `sleep(0.1).nil?` is
+        # always false and would short-circuit this whole condition to false,
+        # meaning the assignment body would NEVER run and every self-ping
+        # would report a miss regardless of whether the reply arrived. Fixed
+        # by dropping the erroneous `.nil?` so sleep's truthy return value
+        # keeps the loop going, exactly as originally intended.
+        got = ($charbus_ping_replies.pop(true) rescue nil) while got.nil? && Time.now.to_f < deadline && sleep(0.1)
+
+        if got == nonce
+          misses = 0
+        else
+          misses += 1
+          respond "--- charbus: self-ping miss #{misses}/#{CONFIG['self_ping_misses']}"
+          if misses >= CONFIG['self_ping_misses']
+            misses = 0
+            respond '--- charbus: subscriber appears dead; reconnecting'
+            $charbus_sub&.close rescue nil
+          end
+        end
+      end
+    end
+  rescue StandardError => e
+    # A supervisor death IS the daemon's death -- it is the script's main
+    # thread, so its body is wrapped in its own rescue (§6.1).
+    respond "--- charbus: supervisor error #{e.class}: #{e.message}"
+  end
+
+  sleep 1
+end
