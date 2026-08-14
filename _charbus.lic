@@ -1,0 +1,84 @@
+=begin
+  charbus daemon. See notes/2026-08-14-charbus-design.md.
+
+  Named with a leading underscore so Lich's prefix matcher (;p c, ;p char)
+  cannot reach it -- see §3.1. Do not rename without reading that section.
+=end
+
+require 'redis'
+require 'securerandom'
+
+Script.loadlib('_charbus')   # -> lib_charbus.lic
+
+me = Script.current
+unless (daemon = Script.daemon_me)
+  respond '--- charbus: cannot identify calling script; aborting.'
+  exit
+end
+_ = daemon
+
+INSTANCE = SecureRandom.hex(3)
+
+# Channel names depend on XMLData.name, which is empty until the <app char=>
+# tag arrives. Starting before then would put every character on dr:_state.
+# Use .to_s.empty? -- line 929 of xmlparser.rb assigns @name unconditionally for
+# any <app> tag, so a tag without a char attribute sets it to nil (§6.6).
+unless XMLData.name.to_s.empty?
+  # already logged in
+else
+  respond '--- charbus: waiting for login before claiming a channel...'
+  waited = 0
+  while XMLData.name.to_s.empty?
+    sleep 1
+    waited += 1
+    respond '--- charbus: still waiting for character name...' if (waited % 30).zero?
+  end
+end
+CHARACTER = XMLData.name.to_s.dup.freeze
+
+raw_config = get_data('charbus')
+begin
+  CONFIG = CharBus::Protocol::Config.validate!(
+    CharBus::Protocol::Config.for_character(raw_config, CHARACTER)
+  )
+rescue CharBus::Protocol::ConfigError => e
+  # Lich's loader rescues every YAML parse error and returns {}, so a malformed
+  # config is indistinguishable from a missing one without this check (§7).
+  respond "--- charbus: #{e.message}"
+  respond '--- charbus: expected lich-5/scripts/data/custom/base-charbus.yaml'
+  exit
+end
+
+PREFIX          = CONFIG['channel_prefix']
+STATE_CHANNEL   = CharBus::Protocol::Channels.state(PREFIX, CHARACTER)
+REQUEST_CHANNEL = CharBus::Protocol::Channels.requests(PREFIX, CHARACTER)
+
+def redis_options(cfg)
+  r = cfg['redis']
+  {
+    host: r['host'], port: r['port'], db: r['db'],
+    connect_timeout: r['connect_timeout'], read_timeout: r['read_timeout'],
+    reconnect_attempts: r['reconnect_attempts']
+  }.compact
+end
+
+# Fail loud at startup: an unreachable Redis exits rather than retrying quietly.
+begin
+  $charbus_pub = Redis.new(**redis_options(CONFIG))
+  $charbus_pub.ping
+rescue StandardError => e
+  respond "--- charbus: cannot reach Redis at #{CONFIG['redis']['host']}:#{CONFIG['redis']['port']} (#{e.class})"
+  exit
+end
+$charbus_sub = Redis.new(**redis_options(CONFIG))
+
+CharBus.daemon_present = true
+respond "--- charbus: #{CHARACTER} on #{STATE_CHANNEL} (instance #{INSTANCE})"
+
+before_dying do
+  CharBus.daemon_present = false
+  $charbus_sub&.close rescue nil
+  $charbus_pub&.close rescue nil
+end
+
+sleep 1   # replaced by the supervisor loop in Task 7
