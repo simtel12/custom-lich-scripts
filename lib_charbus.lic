@@ -1,0 +1,66 @@
+=begin
+  charbus library — in-process API for other Lich scripts.
+
+  Holds only data: two bounded ring buffers and a flag. It owns no Redis
+  connection; the daemon (_charbus.lic) owns both and drains these buffers.
+  See notes/2026-08-14-charbus-design.md §3.3-3.5.
+
+  Usage from any script:
+    Script.loadlib('_charbus')          # resolves to lib_charbus.lic
+    CharBus.emit(:died, to: 'a warcat')
+    CharBus.request('Zulljin', 'start', script: 'buff')
+=end
+
+require File.join(File.dirname(File.expand_path(__FILE__)), 'lib', 'charbus_protocol')
+
+# Reload-safe: ;lib_charbus can be re-run. Buffers are plain data, so an
+# orphaned one is harmless — but see the daemon's re-resolution requirement.
+remove_const(:CharBus) if const_defined?(:CharBus, false)
+
+module CharBus
+  EVENT_CAPACITY   = 256
+  OUTBOX_CAPACITY  = 64
+
+  @buffer  = CharBus::Protocol::RingBuffer.new(EVENT_CAPACITY)
+  @outbox  = CharBus::Protocol::RingBuffer.new(OUTBOX_CAPACITY)
+  @present = false
+
+  class << self
+    attr_reader :buffer, :outbox
+
+    def daemon_present? = @present
+
+    def daemon_present=(val)
+      @present = !!val
+    end
+
+    # Never blocks, never raises, never touches a socket. A hunting script
+    # must not stall or die because Redis blinked.
+    def emit(event, **fields)
+      @buffer.push({ "event" => event.to_s, "at" => Time.now.to_f, "fields" => stringify(fields) })
+      :queued
+    rescue StandardError
+      :queued
+    end
+
+    # Peer-to-peer. Returns :bus_down so a caller can react rather than
+    # assume delivery — with no daemon there is nothing to publish it.
+    def request(character, verb, **args)
+      return :bus_down unless @present
+
+      @outbox.push({
+        "character" => character.to_s,
+        "verb"      => verb.to_s,
+        "args"      => stringify(args),
+        "at"        => Time.now.to_f
+      })
+      :queued
+    rescue StandardError
+      :bus_down
+    end
+
+    def stringify(hash)
+      hash.each_with_object({}) { |(k, v), h| h[k.to_s] = v }
+    end
+  end
+end
