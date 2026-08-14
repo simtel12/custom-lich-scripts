@@ -67,6 +67,12 @@ begin
   $charbus_pub = Redis.new(**redis_options(CONFIG))
   $charbus_pub.ping
 rescue StandardError => e
+  # Close before exiting. before_dying is registered further down and never
+  # runs on this path, so a ping that fails *after* the socket opened (accepted
+  # TCP, then a read timeout or handshake error) would strand it for the life
+  # of the Lich process -- once per retried ;_charbus.
+  $charbus_pub&.close rescue nil
+  $charbus_pub = nil
   respond "--- charbus: cannot reach Redis at #{CONFIG['redis']['host']}:#{CONFIG['redis']['port']} (#{e.class})"
   exit
 end
