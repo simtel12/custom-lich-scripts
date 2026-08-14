@@ -135,7 +135,14 @@ def snapshot_slow
   DRSkill.list.each do |s|
     skills[s.name] = { 'rank' => s.rank, 'exp' => s.exp, 'percent' => s.percent }
   end
-  { 'skills' => skills, 'coins' => { 'silver' => (DRStats.silver rescue nil) } }
+  # No coins field. There is no passive accessor: the only way to read wealth
+  # is DRC.bput("wealth ...") / Lich::Util.issue_command('wealth', ...), which
+  # SENDS A GAME COMMAND. A heartbeat must never do that -- it would type
+  # "wealth" into the game every slow_interval, forever, per character. Same
+  # principle as using XMLData over Room.current: a state feed observes, it
+  # does not act. If coins are wanted later they belong behind an explicit
+  # request verb, where the cost is the caller's choice.
+  { 'skills' => skills }
 end
 
 ticker = CharBus::Protocol::Ticker.new(
