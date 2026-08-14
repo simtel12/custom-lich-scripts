@@ -255,7 +255,11 @@ RSpec.describe "charbus_protocol.rb purity" do
   end
 
   it "mentions no Lich globals outside comments" do
-    code = File.readlines(path).reject { |l| l.strip.start_with?("#") }.join
+    # Read as UTF-8 explicitly. Encoding.default_external is US-ASCII when the
+    # locale is unset (as in the sandbox), and String#strip on a UTF-8 byte
+    # sequence then raises Encoding::CompatibilityError -- a confusing failure
+    # that has nothing to do with Lich purity.
+    code = File.read(path, encoding: "UTF-8").lines.reject { |l| l.strip.start_with?("#") }.join
     %w[Script.current XMLData DRStats get_data start_script fput].each do |sym|
       expect(code).not_to include(sym)
     end
