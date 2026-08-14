@@ -103,3 +103,66 @@ RSpec.describe CharBus::Protocol::Sanitize do
       .to eq({ "n" => 5, "f" => 1.5, "b" => true, "z" => nil })
   end
 end
+
+RSpec.describe CharBus::Protocol::Config do
+  let(:cli_shape) do
+    {
+      "redis" => { "host" => "10.0.0.5", "port" => 6379, "connect_timeout" => 2 },
+      "channel_prefix" => "dr",
+      "heartbeat" => { "fast_interval" => 3, "slow_interval" => 60 },
+      "self_ping_interval" => 60, "self_ping_timeout" => 5, "self_ping_misses" => 3,
+      "reconnect_backoff" => [1, 2, 5],
+      "queue_size" => 64, "event_queue_size" => 256,
+      "event_max_age" => 30, "request_max_age" => 20, "expect_max_timeout" => 60,
+      "characters" => { "Drazoken" => { "heartbeat" => { "fast_interval" => 1 } } }
+    }
+  end
+
+  # What Lich's get_data hands back: symbol top-level keys, string keys beneath.
+  let(:lich_shape) { cli_shape.transform_keys(&:to_sym) }
+
+  it "normalizes both key shapes to the same structure" do
+    expect(described_class.normalize(lich_shape)).to eq(described_class.normalize(cli_shape))
+  end
+
+  it "deep-merges per-character overrides without clobbering siblings" do
+    cfg = described_class.for_character(cli_shape, "Drazoken")
+
+    expect(cfg["heartbeat"]["fast_interval"]).to eq(1)
+    expect(cfg["heartbeat"]["slow_interval"]).to eq(60)
+    expect(cfg["redis"]["host"]).to eq("10.0.0.5")
+  end
+
+  it "returns global values for a character with no overrides" do
+    expect(described_class.for_character(cli_shape, "Zulljin")["heartbeat"]["fast_interval"]).to eq(3)
+  end
+
+  it "strips the characters block from the resolved config" do
+    expect(described_class.for_character(cli_shape, "Drazoken")).not_to have_key("characters")
+  end
+
+  it "accepts a valid config" do
+    expect { described_class.validate!(described_class.for_character(cli_shape, "Drazoken")) }
+      .not_to raise_error
+  end
+
+  # Lich's safe_load_yaml rescues every parse error and returns {}, so a
+  # malformed config arrives as empty with no exception (spec §7).
+  it "rejects an empty config rather than defaulting to localhost" do
+    expect { described_class.validate!({}) }
+      .to raise_error(CharBus::Protocol::ConfigError, /empty/)
+  end
+
+  it "rejects a config missing a required key" do
+    broken = described_class.for_character(cli_shape, "Drazoken")
+    broken.delete("channel_prefix")
+    expect { described_class.validate!(broken) }
+      .to raise_error(CharBus::Protocol::ConfigError, /channel_prefix/)
+  end
+
+  it "rejects a blank channel prefix" do
+    broken = described_class.for_character(cli_shape, "Drazoken").merge("channel_prefix" => "")
+    expect { described_class.validate!(broken) }
+      .to raise_error(CharBus::Protocol::ConfigError, /channel_prefix/)
+  end
+end

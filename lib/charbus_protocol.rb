@@ -92,5 +92,58 @@ module CharBus
         end
       end
     end
+
+    class ConfigError < StandardError; end
+
+    module Config
+      REQUIRED_KEYS = %w[
+        redis channel_prefix heartbeat self_ping_interval self_ping_timeout
+        self_ping_misses reconnect_backoff queue_size event_queue_size
+        event_max_age request_max_age expect_max_timeout
+      ].freeze
+
+      module_function
+
+      def normalize(raw)
+        deep_stringify(raw.respond_to?(:to_h) ? raw.to_h : raw)
+      end
+
+      def for_character(raw, name)
+        cfg = normalize(raw)
+        overrides = (cfg["characters"] || {})[name.to_s] || {}
+        merged = deep_merge(cfg, overrides)
+        merged.delete("characters")
+        merged
+      end
+
+      def validate!(cfg)
+        raise ConfigError, "charbus config is empty — missing or malformed YAML" if cfg.nil? || cfg.empty?
+
+        missing = REQUIRED_KEYS.reject { |k| cfg.key?(k) }
+        raise ConfigError, "charbus config missing keys: #{missing.join(', ')}" unless missing.empty?
+
+        prefix = cfg["channel_prefix"]
+        raise ConfigError, "channel_prefix must be a non-empty string" unless prefix.is_a?(String) && !prefix.empty?
+
+        host = cfg.dig("redis", "host")
+        raise ConfigError, "redis.host must be a non-empty string" unless host.is_a?(String) && !host.empty?
+
+        cfg
+      end
+
+      def deep_stringify(obj)
+        case obj
+        when Hash  then obj.each_with_object({}) { |(k, v), h| h[k.to_s] = deep_stringify(v) }
+        when Array then obj.map { |v| deep_stringify(v) }
+        else obj
+        end
+      end
+
+      def deep_merge(base, over)
+        base.merge(over) do |_k, a, b|
+          a.is_a?(Hash) && b.is_a?(Hash) ? deep_merge(a, b) : b
+        end
+      end
+    end
   end
 end

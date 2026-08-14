@@ -1,0 +1,37 @@
+---
+# charbus configuration. See notes/2026-08-14-charbus-design.md §7.
+#
+# Source of truth is custom-scripts/data/base-charbus.yaml; mirrored
+# byte-identical to lich-5/scripts/data/custom/base-charbus.yaml. Edit the
+# source, mirror to runtime, commit only in custom-scripts/.
+#
+# LOADER: reach this file as get_data('charbus'). Lich's to_base_filename is
+# "base-#{suffix}.yaml" (lich-5/lib/common/setup_files.rb:201-203), hence the
+# "base-" prefix — it is required, not decorative.
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  db: 0                    # inert for pub/sub; channels are server-global
+  connect_timeout: 2
+  read_timeout: 2
+  reconnect_attempts: [0, 0.05, 0.1, 0.5]
+
+channel_prefix: dr
+
+heartbeat:
+  fast_interval: 3         # seconds
+  slow_interval: 60        # seconds, independent of fast_interval
+
+self_ping_interval: 60
+self_ping_timeout: 5
+self_ping_misses: 3
+reconnect_backoff: [1, 2, 5, 10, 30]   # last value repeats indefinitely
+
+queue_size: 64             # requests; full => reject with request_failed
+event_queue_size: 256      # events; full => drop oldest
+event_max_age: 30          # seconds; stale buffered events dropped at start
+request_max_age: 20        # seconds since arrival; checked at dequeue
+expect_max_timeout: 60     # hard wall-clock cap on the expect verb
+
+characters: {}
