@@ -1,0 +1,100 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "redis"
+require "yaml"
+require "securerandom"
+require_relative "../lib/charbus_protocol"
+
+CONFIG_PATH = ENV.fetch("CHARBUS_CONFIG",
+                        File.expand_path("../data/base-charbus.yaml", __dir__))
+
+def config
+  raw = YAML.load_file(CONFIG_PATH)
+  CharBus::Protocol::Config.validate!(CharBus::Protocol::Config.normalize(raw))
+rescue Errno::ENOENT
+  abort "charbus: no config at #{CONFIG_PATH} (set CHARBUS_CONFIG)"
+rescue CharBus::Protocol::ConfigError => e
+  abort "charbus: #{e.message}"
+end
+
+def redis(cfg)
+  r = cfg["redis"]
+  Redis.new(host: r["host"], port: r["port"], db: r["db"])
+end
+
+def send_request(cfg, character, verb, args, wait:)
+  char    = CharBus::Protocol::Channels.normalize_character(character)
+  prefix  = cfg["channel_prefix"]
+  reply   = wait ? CharBus::Protocol::Channels.reply(prefix, SecureRandom.uuid) : nil
+  ready   = Queue.new
+  got     = Queue.new
+
+  listener = if wait
+    Thread.new do
+      s = redis(cfg)
+      # SUBSCRIBE must be confirmed BEFORE the publish: pub/sub has no
+      # retroactive delivery, so publishing first loses fast replies.
+      s.subscribe(reply) do |on|
+        on.subscribe { ready << true }
+        on.message { |_c, m| got << m; s.unsubscribe }
+      end
+    rescue StandardError
+      nil
+    end
+  end
+  ready.pop if wait
+
+  json = CharBus::Protocol::Envelope.encode(
+    type: "request", from: "cli", instance: "cli", seq: 1,
+    reply_to: reply, payload: { "verb" => verb, "args" => args }
+  )
+  redis(cfg).publish(CharBus::Protocol::Channels.requests(prefix, char), json)
+  return puts("sent") unless wait
+
+  deadline = Time.now + 10
+  while Time.now < deadline
+    return puts(got.pop) unless got.empty?
+    sleep 0.05
+  end
+  # A timeout means UNKNOWN, never failed — the request may have executed.
+  warn "no reply within 10s — status UNKNOWN (the request may have executed)"
+  exit 2
+ensure
+  listener&.kill
+end
+
+cfg = config
+cmd = ARGV.shift
+
+case cmd
+when "watch"
+  chars = ARGV.empty? ? [] : ARGV.map { |c| CharBus::Protocol::Channels.normalize_character(c) }
+  abort "usage: charbus watch <character> [...]" if chars.empty?
+  channels = chars.map { |c| CharBus::Protocol::Channels.state(cfg["channel_prefix"], c) }
+  redis(cfg).subscribe(*channels) do |on|
+    on.message do |ch, json|
+      m = CharBus::Protocol::Envelope.decode(json) rescue next
+      # Keep per-message work trivial: a slow consumer gets killed by Redis's
+      # pubsub output-buffer limit (§6.9).
+      puts "#{Time.at(m[:ts]).strftime('%H:%M:%S')} #{ch} #{m[:type]} #{m[:payload].inspect[0, 160]}"
+    end
+  end
+when "send"
+  character, verb = ARGV.shift, ARGV.shift
+  abort "usage: charbus send <character> <verb> [k=v ...]" unless character && verb
+  args = ARGV.map { |kv| kv.split("=", 2) }.to_h
+  send_request(cfg, character, verb, args, wait: false)
+when "query"
+  character = ARGV.shift
+  abort "usage: charbus query <character> [field ...]" unless character
+  send_request(cfg, character, "query", { "fields" => ARGV }, wait: true)
+when "ping"
+  character = ARGV.shift
+  abort "usage: charbus ping <character>" unless character
+  started = Time.now
+  send_request(cfg, character, "ping", { "nonce" => SecureRandom.hex(4) }, wait: true)
+  puts format("round trip %.1f ms", (Time.now - started) * 1000)
+else
+  abort "usage: charbus {watch|send|query|ping} ..."
+end
