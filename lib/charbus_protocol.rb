@@ -4,7 +4,7 @@
 #
 # HARD RULE: this file must contain no Lich references. It has to `require`
 # cleanly in a bare Ruby process, because bin/charbus runs outside Lich and the
-# specs run without a game session. See notes/2026-08-14-charbus-design.md §3.2.
+# specs run without a game session. See notes/2026-08-14-charbus-design.md section 3.2.
 
 require "json"
 require "securerandom"
@@ -36,7 +36,7 @@ module CharBus
       end
 
       # Decodes without validating `v`. Version enforcement is the daemon's job
-      # (spec §4.2): it must be able to read `id` and `reply_to` from a message
+      # (spec section 4.2): it must be able to read `id` and `reply_to` from a message
       # whose version it does not support, in order to reply at all.
       def decode(str)
         raw = JSON.parse(str)
@@ -65,7 +65,7 @@ module CharBus
 
       # Redis channel names are byte-exact, so the daemon's XMLData.name casing
       # is canonical. The CLI cannot discover that casing without already having
-      # it, so it capitalizes — correct for DR character names (spec §4.1).
+      # it, so it capitalizes -- correct for DR character names (spec section 4.1).
       def normalize_character(name)
         s = name.to_s.strip
         s.empty? ? s : (s[0].upcase + s[1..].downcase)
@@ -75,7 +75,7 @@ module CharBus
     # Game text arrives ASCII-8BIT (Ox parses with convert_special: false), while
     # map-derived strings are UTF-8. JSON.generate raises on a BINARY string with
     # any byte >= 0x80, which would kill the publisher thread in a restart loop
-    # (spec §4.5).
+    # (spec section 4.5).
     module Sanitize
       module_function
 
@@ -117,7 +117,7 @@ module CharBus
       end
 
       def validate!(cfg)
-        raise ConfigError, "charbus config is empty — missing or malformed YAML" if cfg.nil? || cfg.empty?
+        raise ConfigError, "charbus config is empty -- missing or malformed YAML" if cfg.nil? || cfg.empty?
 
         missing = REQUIRED_KEYS.reject { |k| cfg.key?(k) }
         raise ConfigError, "charbus config missing keys: #{missing.join(', ')}" unless missing.empty?
@@ -144,6 +144,73 @@ module CharBus
           a.is_a?(Hash) && b.is_a?(Hash) ? deep_merge(a, b) : b
         end
       end
+    end
+
+    # Independent per-tier schedules. slow_interval is in seconds, not in fast
+    # beats -- counting it in beats silently coupled the tiers, so raising a
+    # character's fast rate also multiplied its DRSkill traffic (spec section 7).
+    class Ticker
+      def initialize(fast_interval:, slow_interval:, now: Time.now.to_f)
+        @fast_interval = fast_interval.to_f
+        @slow_interval = slow_interval.to_f
+        @next_fast = now + @fast_interval
+        @next_slow = now + @slow_interval
+      end
+
+      def due(now = Time.now.to_f)
+        tiers = []
+        if now >= @next_fast
+          tiers << :fast
+          # Reschedule from now, not from @next_fast, so a stalled daemon does
+          # not emit a burst of catch-up beats on resume.
+          @next_fast = now + @fast_interval
+        end
+        if now >= @next_slow
+          tiers << :slow
+          @next_slow = now + @slow_interval
+        end
+        tiers
+      end
+    end
+
+    # Bounded, drop-oldest, non-blocking. See the class comment in the spec
+    # (section 3.4) for why SizedQueue cannot express this.
+    class RingBuffer
+      def initialize(capacity)
+        @capacity = Integer(capacity)
+        raise ArgumentError, "capacity must be positive" unless @capacity.positive?
+
+        @items = []
+        @dropped = 0
+        @mutex = Mutex.new
+      end
+
+      def push(item)
+        @mutex.synchronize do
+          @items << item
+          while @items.size > @capacity
+            @items.shift
+            @dropped += 1
+          end
+        end
+        :queued
+      end
+
+      def drain
+        @mutex.synchronize do
+          out = @items
+          @items = []
+          out
+        end
+      end
+
+      def clear
+        drain
+        nil
+      end
+
+      def size    = @mutex.synchronize { @items.size }
+      def dropped = @mutex.synchronize { @dropped }
     end
   end
 end

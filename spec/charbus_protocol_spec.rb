@@ -166,3 +166,98 @@ RSpec.describe CharBus::Protocol::Config do
       .to raise_error(CharBus::Protocol::ConfigError, /channel_prefix/)
   end
 end
+
+RSpec.describe CharBus::Protocol::Ticker do
+  it "reports the fast tier when its interval has elapsed" do
+    t = described_class.new(fast_interval: 3, slow_interval: 60, now: 1000.0)
+
+    expect(t.due(1002.0)).to eq([])
+    expect(t.due(1003.0)).to eq([:fast])
+    expect(t.due(1004.0)).to eq([])
+    expect(t.due(1006.0)).to eq([:fast])
+  end
+
+  it "tracks the slow tier independently, not as a multiple of fast beats" do
+    t = described_class.new(fast_interval: 3, slow_interval: 60, now: 1000.0)
+
+    expect(t.due(1030.0)).to eq([:fast])
+    expect(t.due(1060.0)).to contain_exactly(:fast, :slow)
+    expect(t.due(1063.0)).to eq([:fast])
+  end
+
+  it "does not compound missed beats after a long stall" do
+    t = described_class.new(fast_interval: 3, slow_interval: 60, now: 1000.0)
+    expect(t.due(1300.0)).to contain_exactly(:fast, :slow)
+    expect(t.due(1301.0)).to eq([])
+  end
+end
+
+RSpec.describe CharBus::Protocol::RingBuffer do
+  it "queues and drains in order" do
+    b = described_class.new(3)
+    expect(b.push(:a)).to eq(:queued)
+    b.push(:b)
+
+    expect(b.drain).to eq([:a, :b])
+    expect(b.drain).to eq([])
+    expect(b.size).to eq(0)
+  end
+
+  it "drops the oldest entry on overflow and counts it" do
+    b = described_class.new(2)
+    b.push(:a); b.push(:b); b.push(:c)
+
+    expect(b.drain).to eq([:b, :c])
+    expect(b.dropped).to eq(1)
+  end
+
+  it "counts drops cumulatively across drains" do
+    b = described_class.new(1)
+    4.times { |i| b.push(i) }
+    b.drain
+    b.push(:x)
+
+    expect(b.dropped).to eq(3)
+  end
+
+  it "never blocks or raises when full" do
+    b = described_class.new(1)
+    expect { 100.times { b.push(:x) } }.not_to raise_error
+  end
+
+  it "is safe under concurrent pushes" do
+    b = described_class.new(10_000)
+    threads = 8.times.map { Thread.new { 500.times { |i| b.push(i) } } }
+    threads.each(&:join)
+
+    expect(b.drain.size).to eq(4000)
+    expect(b.dropped).to eq(0)
+  end
+
+  it "clears without resetting the drop counter" do
+    b = described_class.new(1)
+    b.push(:a); b.push(:b)
+    b.clear
+
+    expect(b.size).to eq(0)
+    expect(b.dropped).to eq(1)
+  end
+end
+
+RSpec.describe "charbus_protocol.rb purity" do
+  let(:path) { File.expand_path("../lib/charbus_protocol.rb", __dir__) }
+
+  # bin/charbus runs outside Lich, so any Lich reference here breaks the CLI.
+  it "loads in a bare Ruby process with no Lich constants defined" do
+    out = `ruby -e 'require #{path.inspect}; puts CharBus::Protocol::VERSION' 2>&1`
+    expect($?.success?).to be(true), "loading failed: #{out}"
+    expect(out.strip).to eq("1")
+  end
+
+  it "mentions no Lich globals outside comments" do
+    code = File.readlines(path).reject { |l| l.strip.start_with?("#") }.join
+    %w[Script.current XMLData DRStats get_data start_script fput].each do |sym|
+      expect(code).not_to include(sym)
+    end
+  end
+end
