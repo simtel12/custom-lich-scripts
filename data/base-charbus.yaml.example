@@ -1,0 +1,177 @@
+---
+# charbus example configuration
+# =============================
+#
+# Copy this to base-charbus.yaml, edit the redis: block and the characters:
+# block, then mirror it to the Lich runtime:
+#
+#     cd custom-scripts
+#     cp data/base-charbus.yaml.example data/base-charbus.yaml
+#     $EDITOR data/base-charbus.yaml
+#     cp data/base-charbus.yaml ../lich-5/scripts/data/custom/base-charbus.yaml
+#
+# TWO COPIES ARE REQUIRED, and they are read by different code paths:
+#
+#   custom-scripts/data/base-charbus.yaml
+#       Source of truth. Committed. Read directly by bin/charbus (the CLI),
+#       which runs outside Lich and cannot use Lich's data loader. Override
+#       the path with CHARBUS_CONFIG=/some/other/file.
+#
+#   lich-5/scripts/data/custom/base-charbus.yaml
+#       Runtime copy. NOT committed (that tree is a working directory).
+#       Read by the daemon via get_data('charbus').
+#
+# The "base-" prefix is REQUIRED, not decorative. Lich resolves
+# get_data('charbus') to base-charbus.yaml (lib/common/setup_files.rb:201-203)
+# and scans scripts/data/custom/ before scripts/data/ (:181-186). Rename the
+# file and the daemon will exit at startup saying the config is empty.
+#
+# A malformed config is NOT loudly rejected by Lich: safe_load_yaml rescues
+# every parse error and returns {} (setup_files.rb:64-70). charbus compensates
+# by asserting the config is non-empty and carries every required key, so a
+# stray tab in here produces "charbus config is empty" rather than a daemon
+# quietly talking to the wrong Redis. If you see that message, suspect YAML
+# syntax before you suspect a missing file.
+
+# ---------------------------------------------------------------------------
+# redis: where the bus lives. This is the only block most people need to edit.
+# ---------------------------------------------------------------------------
+#
+# Pick the host to match where Redis actually runs RELATIVE TO LICH:
+#
+#   Redis in the same sandbox/container as Lich .... host: 127.0.0.1
+#   Redis on the host machine, Lich in a sandbox ... host: host.docker.internal
+#   Redis elsewhere on the LAN ..................... host: 10.0.0.5 (its IP)
+#
+# The middle case is the one that bites: inside a sandbox, 127.0.0.1 is the
+# SANDBOX's loopback, not the host's, so a Redis running on your desktop is not
+# at 127.0.0.1 from Lich's point of view. Verify before relying on it --
+# host.docker.internal may resolve to an IPv6 link-local address that does not
+# actually route. Test from where Lich runs, not from your desktop:
+#
+#     ruby -rredis -e 'puts Redis.new(host: "host.docker.internal", port: 6379).ping'
+#
+# For anything other than 127.0.0.1, the sandbox network policy must also allow
+# the address. If connections hang or are refused with the config otherwise
+# correct, that is the first thing to check.
+redis:
+  host: 127.0.0.1
+  port: 6379
+
+  # Inert for this design. Redis pub/sub is NOT namespaced by database --
+  # SELECT has no effect on PUBLISH/SUBSCRIBE and channels are global to the
+  # server. Kept only because the client accepts it. Do not assume a different
+  # db gives you a separate bus; use channel_prefix for that.
+  db: 0
+
+  # Keep these short. connect_timeout in particular bounds how long a
+  # ;kill _charbus can stall Lich's shutdown when Redis is unreachable, because
+  # the daemon publishes a final daemon_stopped event on the way out.
+  connect_timeout: 2
+  read_timeout: 2
+
+  # Inter-attempt delays in seconds, handed to redis-client. Retrying PUBLISH is
+  # safe here specifically because delivery is fire-and-forget and a duplicate
+  # heartbeat is harmless -- this would not be true for a write command.
+  reconnect_attempts: [0, 0.05, 0.1, 0.5]
+
+# ---------------------------------------------------------------------------
+# channel_prefix: the ONLY isolation between you and anything else on this
+# Redis. Since pub/sub ignores the db setting, two people sharing a server with
+# the same prefix would drive each other's characters. Change it if the
+# instance is not exclusively yours.
+#
+# Channels become:
+#     <prefix>:<Character>_state      daemon -> world  (heartbeats, events)
+#     <prefix>:<Character>_requests   world  -> daemon (requests)
+#     <prefix>:reply:<uuid>           daemon -> one requester
+#
+# Character names are byte-exact and come from XMLData.name, so they are
+# capitalized: dr:Drazoken_state, never dr:drazoken_state.
+# ---------------------------------------------------------------------------
+channel_prefix: dr
+
+# ---------------------------------------------------------------------------
+# heartbeat: two independent tiers, both in SECONDS.
+#
+#   fast: vitals, encumbrance, combat position, room, running scripts
+#   slow: the full DRSkill table (~72 skills, roughly 5 KB of JSON)
+#
+# slow_interval is NOT a multiple of fast_interval. They are independent on
+# purpose: an earlier design counted the slow tier in fast beats, which meant
+# raising a character's fast rate silently multiplied its skill traffic too.
+# ---------------------------------------------------------------------------
+heartbeat:
+  fast_interval: 3
+  slow_interval: 60
+
+# ---------------------------------------------------------------------------
+# Liveness. The daemon publishes a ping to its OWN request channel and expects
+# it back, which is the only way to notice a socket killed by a firewall or NAT
+# that never sends a FIN -- a blocking subscribe would otherwise wait forever.
+# The ping is answered inline by the subscriber, never queued behind requests.
+#
+# self_ping_misses exists so one slow round trip does not trigger a reconnect.
+# Detection takes up to interval + (misses * timeout), so with the values below
+# a genuinely dead subscriber is caught within about 75 seconds.
+# ---------------------------------------------------------------------------
+self_ping_interval: 60
+self_ping_timeout: 5
+self_ping_misses: 3
+
+# Backoff for subscriber reconnection, in seconds. The last value repeats
+# indefinitely -- charbus retries forever rather than giving up, but says so
+# loudly in the game window each time.
+reconnect_backoff: [1, 2, 5, 10, 30]
+
+# ---------------------------------------------------------------------------
+# Queues and expiry.
+#
+# queue_size       inbound requests. When full, further requests are REJECTED
+#                  with request_failed rather than silently dropped.
+# event_queue_size events buffered by the library for the daemon to drain.
+#                  When full, the OLDEST is discarded and counted in the
+#                  dropped_events field of every fast heartbeat.
+# event_max_age    buffered events older than this are discarded rather than
+#                  published when the daemon starts, so a controller does not
+#                  receive minutes-stale events as if they were current.
+# request_max_age  measured from ARRIVAL at the daemon, not from the sender's
+#                  clock (senders may be on other machines with skew). Anything
+#                  that sat in the queue longer than this is dropped instead of
+#                  executed late -- so a "flee" issued during a stall does not
+#                  fire minutes later against a situation that no longer exists.
+# ---------------------------------------------------------------------------
+queue_size: 64
+event_queue_size: 256
+event_max_age: 30
+request_max_age: 20
+
+# Hard wall-clock cap on the expect verb, in seconds. Requests asking for more
+# are rejected at dispatch rather than clamped.
+#
+# NOTE this bounds what a request may ASK FOR, not how long the call can
+# actually take: dothistimeout resets its own clock on roundtime, type-ahead
+# and stun, so a stunned character can overrun this. The reply carries an
+# "overran" flag when that happens.
+expect_max_timeout: 60
+
+# ---------------------------------------------------------------------------
+# characters: optional per-character overrides, deep-merged over everything
+# above. Keys must match XMLData.name exactly, including capitalization.
+#
+# Omit the block entirely (or leave it {}) if every character uses the globals.
+# ---------------------------------------------------------------------------
+characters:
+  # A character you actively drive from a controller: faster vitals, and a
+  # bigger request queue because you send bursts.
+  Drazoken:
+    heartbeat:
+      fast_interval: 1
+    queue_size: 128
+
+  # A character parked crafting or idling: slower everything, less traffic.
+  # Note this only overrides slow_interval -- fast_interval stays at the
+  # global 3, because the merge is per-key, not per-block.
+  Zulljin:
+    heartbeat:
+      slow_interval: 300
