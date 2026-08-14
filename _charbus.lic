@@ -87,4 +87,86 @@ before_dying do
   $charbus_pub&.close rescue nil
 end
 
-sleep 1   # replaced by the supervisor loop in Task 7
+$charbus_seq = 0
+$charbus_seq_mutex = Mutex.new
+
+def next_seq
+  $charbus_seq_mutex.synchronize { $charbus_seq += 1 }
+end
+
+def publish(type, payload, reply_to: nil, channel: STATE_CHANNEL)
+  json = CharBus::Protocol::Envelope.encode(
+    type: type, from: CHARACTER, instance: INSTANCE, seq: next_seq,
+    reply_to: reply_to, payload: CharBus::Protocol::Sanitize.deep(payload)
+  )
+  $charbus_pub.publish(channel, json)
+  true
+rescue StandardError
+  false
+end
+
+def emit_event(name, fields = {})
+  publish('event', { 'event' => name.to_s }.merge(fields))
+end
+
+def snapshot_fast
+  {
+    'vitals' => {
+      'health' => DRStats.health, 'mana' => DRStats.mana,
+      'fatigue' => DRStats.fatigue, 'spirit' => DRStats.spirit,
+      'concentration' => DRStats.concentration
+    },
+    # encumbrance and position are drinfomon class variables, not XMLData
+    # delegates; encumbrance is nil until first parsed. position is COMBAT
+    # ADVANTAGE, not posture.
+    'encumbrance' => DRStats.encumbrance,
+    'combat_position' => DRStats.position,
+    'location' => {
+      'room_id' => XMLData.room_id.to_s,
+      'room_title' => XMLData.room_title.to_s
+    },
+    'scripts' => Script.list.map { |s| { 'name' => s.name, 'paused' => s.paused?, 'hidden' => s.hidden } },
+    'dropped_events' => CharBus.buffer.dropped
+  }
+end
+
+def snapshot_slow
+  skills = {}
+  DRSkill.list.each do |s|
+    skills[s.name] = { 'rank' => s.rank, 'exp' => s.exp, 'percent' => s.percent }
+  end
+  { 'skills' => skills, 'coins' => { 'silver' => (DRStats.silver rescue nil) } }
+end
+
+ticker = CharBus::Protocol::Ticker.new(
+  fast_interval: CONFIG['heartbeat']['fast_interval'],
+  slow_interval: CONFIG['heartbeat']['slow_interval']
+)
+
+publisher = Thread.new do
+  loop do
+    begin
+      ticker.due.each do |tier|
+        case tier
+        when :fast then publish('heartbeat_fast', snapshot_fast)
+        when :slow then publish('heartbeat_slow', snapshot_slow)
+        end
+      end
+
+      # Re-resolve the buffer every iteration. ;lib_charbus rebinds CharBus to a
+      # fresh module; a cached buffer would be drained forever while emitters
+      # filled the new one, silently (§3.4).
+      max_age = CONFIG['event_max_age']
+      now = Time.now.to_f
+      CharBus.buffer.drain.each do |ev|
+        next if now - ev['at'].to_f > max_age
+        publish('event', { 'event' => ev['event'] }.merge(ev['fields']))
+      end
+    rescue StandardError => e
+      respond "--- charbus: publisher error #{e.class}: #{e.message}"
+    end
+    sleep 0.25
+  end
+end
+
+sleep 1   # replaced by the supervisor loop in Task 10
