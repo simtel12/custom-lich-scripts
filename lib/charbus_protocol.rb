@@ -55,5 +55,42 @@ module CharBus
         raise MalformedEnvelope, e.message
       end
     end
+
+    module Channels
+      module_function
+
+      def state(prefix, character)    = "#{prefix}:#{character}_state"
+      def requests(prefix, character) = "#{prefix}:#{character}_requests"
+      def reply(prefix, uuid)         = "#{prefix}:reply:#{uuid}"
+
+      # Redis channel names are byte-exact, so the daemon's XMLData.name casing
+      # is canonical. The CLI cannot discover that casing without already having
+      # it, so it capitalizes — correct for DR character names (spec §4.1).
+      def normalize_character(name)
+        s = name.to_s.strip
+        s.empty? ? s : (s[0].upcase + s[1..].downcase)
+      end
+    end
+
+    # Game text arrives ASCII-8BIT (Ox parses with convert_special: false), while
+    # map-derived strings are UTF-8. JSON.generate raises on a BINARY string with
+    # any byte >= 0x80, which would kill the publisher thread in a restart loop
+    # (spec §4.5).
+    module Sanitize
+      module_function
+
+      def string(str)
+        str.dup.force_encoding(Encoding::UTF_8).scrub("?")
+      end
+
+      def deep(obj)
+        case obj
+        when String then string(obj)
+        when Array  then obj.map { |v| deep(v) }
+        when Hash   then obj.each_with_object({}) { |(k, v), h| h[deep(k)] = deep(v) }
+        else obj
+        end
+      end
+    end
   end
 end
