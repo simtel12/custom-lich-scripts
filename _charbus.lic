@@ -258,4 +258,103 @@ subscriber = Thread.new do
   end
 end
 
+SCRIPT_NAME_RE = /\A[\w.-]+\z/
+
+def reply_ok(msg, data = {})
+  return unless msg[:reply_to]
+  publish('reply', { 'in_reply_to' => msg[:id], 'ok' => true }.merge(data), channel: msg[:reply_to])
+end
+
+def reply_err(msg, error)
+  emit_event('request_failed', 'id' => msg[:id], 'error' => error)
+  return unless msg[:reply_to]
+  publish('reply', { 'in_reply_to' => msg[:id], 'ok' => false, 'error' => error },
+          channel: msg[:reply_to])
+end
+
+# Never hand an unvalidated string to Lich's matchers: Script.kill interpolates
+# into /^#{name}$/i unescaped and pause_script's /^#{scr}/i is unanchored.
+def resolve_running(name)
+  return nil unless name.is_a?(String) && name.match?(SCRIPT_NAME_RE)
+  Script.list.find { |s| s.name.casecmp?(name) }
+end
+
+def execute(msg)
+  args = msg[:payload]['args'] || {}
+  case msg[:payload]['verb']
+  when 'start'
+    name = args['script']
+    return reply_err(msg, 'invalid_script_name') unless name.is_a?(String) && name.match?(SCRIPT_NAME_RE)
+    return reply_err(msg, 'no_such_script') unless Script.exists?(name)
+
+    started = start_script(name, Array(args['args']).map(&:to_s))
+    started ? reply_ok(msg, 'started' => name) : reply_err(msg, 'start_failed')
+
+  when 'stop'
+    target = resolve_running(args['script'])
+    return reply_err(msg, 'no_such_script') unless target
+    emit_event('daemon_stopped', 'reason' => 'remote_stop') if target.name == Script.current.name
+    Script.kill(target.name) ? reply_ok(msg, 'stopped' => target.name) : reply_err(msg, 'stop_failed')
+
+  when 'pause'
+    target = resolve_running(args['script'])
+    return reply_err(msg, 'no_such_script') unless target
+    target.pause
+    reply_ok(msg, 'paused' => target.name)
+
+  when 'resume'
+    target = resolve_running(args['script'])
+    return reply_err(msg, 'no_such_script') unless target
+    target.unpause
+    reply_ok(msg, 'resumed' => target.name)
+
+  when 'send'
+    text = args['text']
+    return reply_err(msg, 'missing_text') unless text.is_a?(String) && !text.empty?
+    put text
+    reply_ok(msg, 'sent' => text)
+
+  when 'expect'
+    text    = args['text']
+    pattern = args['pattern']
+    timeout = args['timeout'].to_i
+    return reply_err(msg, 'missing_args') unless text.is_a?(String) && pattern.is_a?(String)
+    return reply_err(msg, 'timeout_too_large') if timeout > CONFIG['expect_max_timeout'] || timeout <= 0
+
+    deadline = Time.now.to_f + CONFIG['expect_max_timeout']
+    result = dothistimeout(text, timeout, Regexp.new(pattern))
+    reply_ok(msg, 'matched' => result.to_s, 'overran' => Time.now.to_f > deadline)
+
+  when 'query'
+    fields = Array(args['fields'])
+    snap = snapshot_fast.merge(snapshot_slow)
+    snap = snap.slice(*fields) unless fields.empty?
+    reply_ok(msg, 'snapshot' => CharBus::Protocol::Sanitize.deep(snap))
+
+  else
+    reply_err(msg, 'unknown_verb')
+  end
+end
+
+worker = Thread.new do
+  loop do
+    msg = $charbus_requests.pop
+    break if msg.nil?
+
+    begin
+      if Time.now.to_f - msg[:arrived_at] > CONFIG['request_max_age']
+        emit_event('request_expired', 'id' => msg[:id])
+        publish('reply', { 'in_reply_to' => msg[:id], 'ok' => false, 'error' => 'expired' },
+                channel: msg[:reply_to]) if msg[:reply_to]
+        next
+      end
+      execute(msg)
+    rescue StandardError => e
+      # The worker may never die from a request: an unrescued exception kills
+      # the thread silently while heartbeats keep flowing (§6.1).
+      reply_err(msg, "#{e.class}: #{e.message}")
+    end
+  end
+end
+
 sleep 1   # replaced by the supervisor loop in Task 10
