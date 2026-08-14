@@ -11,6 +11,10 @@ require 'securerandom'
 Script.loadlib('_charbus')   # -> lib_charbus.lic
 
 me = Script.current
+# Also as a global: `me` is a top-level local, and `def` bodies open a new
+# scope that cannot see it. Verb code lives in defs and must never call
+# Script.current, which sleeps while the script is paused.
+$charbus_me = me
 unless (daemon = Script.daemon_me)
   respond '--- charbus: cannot identify calling script; aborting.'
   exit
@@ -293,7 +297,12 @@ def execute(msg)
   when 'stop'
     target = resolve_running(args['script'])
     return reply_err(msg, 'no_such_script') unless target
-    emit_event('daemon_stopped', 'reason' => 'remote_stop') if target.name == Script.current.name
+    # Compare against the latched script object, NOT Script.current: that
+    # sleeps while the script is paused (script.rb:1025-1027). A `stop`
+    # aimed at the daemon arriving while it is paused would park the single
+    # worker inside Script.current -- and the only thing that could unpause
+    # it is a `resume` verb dequeued by that same wedged worker.
+    emit_event('daemon_stopped', 'reason' => 'remote_stop') if target.name == $charbus_me.name
     Script.kill(target.name) ? reply_ok(msg, 'stopped' => target.name) : reply_err(msg, 'stop_failed')
 
   when 'pause'
