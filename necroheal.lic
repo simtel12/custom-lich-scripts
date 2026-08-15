@@ -1,0 +1,86 @@
+=begin
+  Sits back and lets hunting-buddy/combat-trainer's necromancer self-healing
+  (Consumed Flesh / Devour) do the actual healing work. Starts hunting-buddy
+  with the "necroheal" hunting_info file, watches for injuries via the HEALTH
+  command, and once none remain, signals hunting-buddy to wrap up gracefully.
+  Vitality loss from necromantic healing is not a stop condition -- only
+  actual wounds are.
+
+  The graceful signal is $HUNTING_BUDDY.stop_hunting, which its hunt loop
+  checks every second; it then calls combat-trainer's own $COMBAT_TRAINER.stop
+  (which finishes the current clean-up step -- skinning, looting, etc. --
+  before actually halting) and waits for it, then retreats and re-gears at
+  the safe room on its own. This avoids hard-killing hunting-buddy mid-action.
+
+  Requires a <character>-necroheal.yaml with a hunting_info: entry that
+  enables necromancer healing in combat-trainer (thanatology consume_flesh
+  and/or devour settings).
+
+  Examples:
+    ;necroheal
+=end
+
+class NecroHeal
+  POLL_INTERVAL = 10       # seconds between HEALTH checks while waiting to heal
+  SHUTDOWN_TIMEOUT = 300   # max seconds to wait for hunting-buddy's graceful wrap-up
+
+  def initialize
+    exit unless DRC.verify_script('hunting-buddy')
+
+    if Script.running?('hunting-buddy')
+      DRC.message('***STATUS*** hunting-buddy is already running -- stop it first')
+      exit
+    end
+
+    unless DRCH.check_health.injured?
+      DRC.message('***STATUS*** No injuries to heal -- not starting hunting-buddy')
+      exit
+    end
+
+    DRC.message('***STATUS*** Starting hunting-buddy necroheal')
+    start_script('hunting-buddy', ['necroheal'])
+
+    wait_until_healed
+  end
+
+  def wait_until_healed
+    loop do
+      unless Script.running?('hunting-buddy')
+        DRC.message('***STATUS*** hunting-buddy stopped on its own -- nothing left to heal us')
+        return
+      end
+
+      health_data = DRCH.check_health
+      unless health_data.injured?
+        DRC.message('***STATUS*** No more injuries (vitality loss ok) -- signaling hunting-buddy to wrap up')
+        signal_shutdown_and_wait
+        return
+      end
+
+      pause POLL_INTERVAL
+    end
+  end
+
+  def signal_shutdown_and_wait
+    hunting_buddy = $HUNTING_BUDDY
+    unless hunting_buddy
+      stop_script('hunting-buddy')
+      return
+    end
+
+    hunting_buddy.stop_hunting
+    deadline = Time.now + SHUTDOWN_TIMEOUT
+    pause 1 while Script.running?('hunting-buddy') && Time.now < deadline
+
+    return unless Script.running?('hunting-buddy')
+
+    DRC.message('***STATUS*** hunting-buddy did not wrap up in time -- forcing stop')
+    stop_script('hunting-buddy')
+  end
+end
+
+before_dying do
+  stop_script('hunting-buddy') if Script.running?('hunting-buddy')
+end
+
+NecroHeal.new
