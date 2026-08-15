@@ -1,0 +1,159 @@
+=begin
+  Tell a running ;t2 to wrap up gracefully, now or after a while longer.
+
+  With no duration this flips the same @shutdown flag that ";e $T2.shutdown"
+  sets, so t2 stops picking new things to train, runs its t2_after_shutdown
+  actions, and exits on its own.
+
+  With a duration in minutes t2stop stays running and sends that same signal
+  once the deadline passes.  Unlike ;trade, t2 has no deadline of its own, so
+  the timer lives here: leave this script running, and don't be surprised to
+  see ;t2stop in the running-scripts list for a while.  Starting a second
+  ;t2stop with a duration replaces a pending one, and any ;t2stop without a
+  duration supersedes it.
+
+  The flag is only read at the top of t2's main loop, so whatever sub-script
+  t2 is currently waiting on (combat-trainer, craft, ...) finishes first.
+  That can be a long wait.  ";t2stop now" also stops the sub-scripts t2
+  launched, which makes wait_for_script_to_complete return immediately and t2
+  reach the flag on its next pass.  Scripts named in the t2_no_kill setting
+  are spared, exactly as they are during t2's own shutdown cleanup.
+
+  Either way t2's before_dying block still runs, so scripts it launched are
+  cleaned up and cyclics are released per cyclic_no_release.
+
+  Examples:
+    ;t2stop           # wrap up after the current sub-script finishes
+    ;t2stop now       # stop the current sub-script too, wrap up promptly
+    ;t2stop 45        # keep training for 45 more minutes, then wrap up
+    ;t2stop 45 now    # both
+    ;t2stop cancel    # call off a pending shutdown or a pending timer
+=end
+
+# How often the timer wakes to re-check the deadline, in seconds.
+POLL_INTERVAL = 5
+
+minutes = nil
+want_now = false
+want_cancel = false
+unknown = []
+
+Array(Script.current.vars[1..-1]).each do |arg|
+  case arg
+  when /^\d+$/
+    minutes = arg.to_i
+  when /^now$/i
+    want_now = true
+  when /^(cancel|noshutdown)$/i
+    want_cancel = true
+  else
+    unknown << arg
+  end
+end
+
+unless unknown.empty?
+  echo "Unrecognized argument: #{unknown.join(' ')}"
+  echo 'Usage: ;t2stop [minutes] [now|cancel]'
+  exit
+end
+
+if want_cancel && (want_now || minutes)
+  echo "'cancel' cannot be combined with a duration or 'now' -- pick one."
+  exit
+end
+
+if want_cancel
+  if $t2stop_deadline
+    echo "Calling off the t2stop scheduled for about #{$t2stop_deadline.strftime('%H:%M')}."
+    $t2stop_deadline = nil
+  end
+
+  if $T2.nil?
+    echo 'No T2 instance found -- ;t2 is not running.'
+  elsif $T2.instance_variable_get(:@shutdown)
+    $T2.noshutdown
+  else
+    echo 'T2 is not set to shut down.'
+  end
+
+  exit
+end
+
+if $T2.nil?
+  echo 'No T2 instance found to signal -- ;t2 is not running.'
+  exit
+end
+
+echo 'Warning: ;t2 does not appear to be running; signalling anyway.' unless Script.running?('t2')
+
+if minutes.to_i > 0
+  echo 'Note: T2 is already set to shut down, so it will stop before the deadline.' if $T2.instance_variable_get(:@shutdown)
+
+  deadline = Time.now + (60 * minutes)
+  # Published so a later ;t2stop can supersede or cancel this timer, and so
+  # this instance can notice that it has been superseded.
+  $t2stop_deadline = deadline
+  before_dying { $t2stop_deadline = nil if $t2stop_deadline == deadline }
+
+  echo "T2 will keep training for #{minutes} more minutes, until about #{deadline.strftime('%H:%M')}, then wrap up."
+  echo "Use ';t2stop cancel' to call it off."
+
+  # Nothing here reads the game stream; don't accumulate a buffer while idle.
+  Script.current.want_downstream = false
+
+  while Time.now < deadline
+    pause POLL_INTERVAL
+
+    unless $t2stop_deadline == deadline
+      echo 'This t2stop was superseded or cancelled; leaving T2 alone.'
+      exit
+    end
+
+    if $T2.nil?
+      echo 'T2 is no longer running; nothing to signal.'
+      exit
+    end
+  end
+
+  $t2stop_deadline = nil
+end
+
+# Re-read the global rather than reusing an earlier reference: t2 may have been
+# stopped and restarted while the timer was waiting.
+t2 = $T2
+
+if t2.nil?
+  echo 'T2 is no longer running; nothing to signal.'
+  exit
+end
+
+if t2.instance_variable_get(:@shutdown)
+  echo 'T2 was already set to shut down.'
+else
+  t2.shutdown
+  echo 'T2 will run its t2_after_shutdown actions and exit.'
+end
+
+exit unless want_now
+
+if t2.spare_all_scripts?
+  echo "t2_no_kill is set to '#{T2::KILL_ALL_KEYWORD}', so no sub-script will be stopped."
+  echo 'T2 will shut down once the current one finishes on its own.'
+  exit
+end
+
+spared = t2.scripts_to_spare
+launched = Array(t2.instance_variable_get(:@launched_scripts))
+running = launched
+          .reject { |script_name| spared.include?(script_name) }
+          .select { |script_name| Script.running?(script_name) }
+
+if running.empty?
+  echo 'T2 has no sub-script of its own running; it will shut down on its next check.'
+  exit
+end
+
+running.each do |script_name|
+  echo "Stopping #{script_name} so T2 does not have to wait for it."
+  stop_script(script_name)
+end
