@@ -23,6 +23,126 @@ def redis(cfg)
   Redis.new(host: r["host"], port: r["port"], db: r["db"])
 end
 
+COMMANDS = {
+  "watch" => {
+    usage:   "charbus watch <character> [<character> ...]",
+    summary: "Stream state-channel events (heartbeats, script starts, deaths, ...) for one or more characters."
+  },
+  "send" => {
+    usage:   "charbus send <character> <verb> [key=value ...]",
+    summary: "Publish a request to a character's daemon and print its reply."
+  },
+  "query" => {
+    usage:   "charbus query <character> [field ...]",
+    summary: "Shortcut for `send <character> query`, with real multi-field support (see `help send query`). With no fields, returns everything."
+  },
+  "ping" => {
+    usage:   "charbus ping <character>",
+    summary: "Shortcut for `send <character> ping`. Round-trips a nonce through the daemon and prints the latency."
+  },
+  "help" => {
+    usage:   "charbus help [<command> | send <verb>]",
+    summary: "Show this help, or detail for one command, or one send verb."
+  }
+}.freeze
+
+# Mirrors the case statement in execute() (and the special-cased 'ping' verb
+# in handle_inbound) in _charbus.lic -- keep in sync with that file.
+VERBS = {
+  "start" => {
+    usage:   "charbus send <character> start script=<name> [args=<value>]",
+    summary: "Start a Lich script on the character.",
+    args: {
+      "script" => "name of the script to start; must already exist under lich-5/scripts",
+      "args"   => "optional, single value forwarded to the script (this CLI can't pass multiple positional args)"
+    },
+    replies: "started=<name> | invalid_script_name | no_such_script | start_failed"
+  },
+  "stop" => {
+    usage:   "charbus send <character> stop script=<name>",
+    summary: "Stop a currently running script on the character.",
+    args: { "script" => "name of a running script; matched case-insensitively" },
+    replies: "stopped=<name> | no_such_script | stop_failed"
+  },
+  "pause" => {
+    usage:   "charbus send <character> pause script=<name>",
+    summary: "Pause a currently running script on the character.",
+    args: { "script" => "name of a running script; matched case-insensitively" },
+    replies: "paused=<name> | no_such_script"
+  },
+  "resume" => {
+    usage:   "charbus send <character> resume script=<name>",
+    summary: "Unpause a currently paused script on the character.",
+    args: { "script" => "name of a running script; matched case-insensitively" },
+    replies: "resumed=<name> | no_such_script"
+  },
+  "send" => {
+    usage:   "charbus send <character> send text=<text>",
+    summary: "Type text into the game as the character, exactly as `put text` would.",
+    args: { "text" => "non-empty string sent verbatim to the game" },
+    replies: "sent=<text> | missing_text"
+  },
+  "expect" => {
+    usage:   "charbus send <character> expect text=<text> pattern=<regex> timeout=<seconds>",
+    summary: "Send text, then wait for a regex match in the game's response.",
+    args: {
+      "text"    => "command to send",
+      "pattern" => "regex source (no slashes) to wait for in subsequent game output",
+      "timeout" => "seconds to wait; must be > 0 and <= the daemon's expect_max_timeout"
+    },
+    replies: "matched=<match or ''>, overran=<bool> | missing_args | timeout_too_large"
+  },
+  "query" => {
+    usage:   "charbus send <character> query [fields=<field>]",
+    summary: "Fetch a snapshot of the character's live state. Prefer the top-level `charbus query` command for multiple fields -- this verb's k=v args can only carry one field at a time.",
+    args: { "fields" => "optional single field name to filter the snapshot to (omit for everything)" },
+    replies: "snapshot=<vitals, encumbrance, combat_position, location, scripts, dropped_events, skills>"
+  },
+  "ping" => {
+    usage:   "charbus send <character> ping [nonce=<value>]",
+    summary: "Round-trip a nonce through the daemon. Usually invoked via the top-level `charbus ping` command instead, which generates the nonce and prints latency for you.",
+    args: { "nonce" => "optional correlation value; echoed back in the reply" },
+    replies: "nonce=<value>, instance=<id>, at=<timestamp>"
+  }
+}.freeze
+
+def print_top_help
+  puts "usage: charbus <command> [args ...]"
+  puts
+  puts "commands:"
+  COMMANDS.each_value { |info| puts "  #{info[:usage]}\n      #{info[:summary]}" }
+  puts
+  puts "run `charbus help <command>` for details, or `charbus help send <verb>` for a send verb's arguments."
+end
+
+def print_command_help(name)
+  info = COMMANDS[name]
+  abort "charbus: no such command '#{name}' -- run `charbus help`" unless info
+  puts "usage: #{info[:usage]}"
+  puts
+  puts info[:summary]
+  return unless name == "send"
+
+  puts
+  puts "verbs:"
+  VERBS.each { |vname, vinfo| puts "  #{vname.ljust(8)} #{vinfo[:summary]}" }
+  puts
+  puts "run `charbus help send <verb>` for a verb's arguments."
+end
+
+def print_verb_help(verb)
+  info = VERBS[verb]
+  abort "charbus: no such send verb '#{verb}' -- known verbs: #{VERBS.keys.join(', ')}" unless info
+  puts "usage: #{info[:usage]}"
+  puts
+  puts info[:summary]
+  puts
+  puts "args:"
+  info[:args].each { |k, desc| puts "  #{k.ljust(8)} #{desc}" }
+  puts
+  puts "replies: #{info[:replies]}"
+end
+
 def send_request(cfg, character, verb, args, wait:)
   char    = CharBus::Protocol::Channels.normalize_character(character)
   prefix  = cfg["channel_prefix"]
@@ -64,8 +184,23 @@ ensure
   listener&.kill
 end
 
-cfg = config
 cmd = ARGV.shift
+
+# Handled before touching config/Redis: help must work even with no config
+# file present yet.
+case cmd
+when nil, "help", "-h", "--help"
+  if ARGV.empty?
+    print_top_help
+  elsif ARGV[0] == "send" && ARGV[1]
+    print_verb_help(ARGV[1])
+  else
+    print_command_help(ARGV[0])
+  end
+  exit
+end
+
+cfg = config
 
 case cmd
 when "watch"
@@ -83,8 +218,14 @@ when "watch"
 when "send"
   character, verb = ARGV.shift, ARGV.shift
   abort "usage: charbus send <character> <verb> [k=v ...]" unless character && verb
+  # Known daemon verbs (see execute() in _charbus.lic). A typo'd or missing
+  # verb -- e.g. `charbus send Zulljin "wave"`, which puts the text itself in
+  # the verb slot -- used to fail silently: fire-and-forget printed "sent" as
+  # soon as the publish succeeded, before the daemon's unknown_verb rejection
+  # ever came back. Warn immediately instead of waiting for that round trip.
+  warn "warning: '#{verb}' is not a known charbus verb (#{VERBS.keys.join(', ')}) -- sending anyway" unless VERBS.key?(verb)
   args = ARGV.map { |kv| kv.split("=", 2) }.to_h
-  send_request(cfg, character, verb, args, wait: false)
+  send_request(cfg, character, verb, args, wait: true)
 when "query"
   character = ARGV.shift
   abort "usage: charbus query <character> [field ...]" unless character
