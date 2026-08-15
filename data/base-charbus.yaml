@@ -10,7 +10,7 @@
 # "base-" prefix — it is required, not decorative.
 
 redis:
-  host: 127.0.0.1
+  host: pi-rack-4.lan
   port: 6379
   db: 0                    # inert for pub/sub; channels are server-global
   connect_timeout: 2
