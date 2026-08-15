@@ -11,13 +11,29 @@
     CharBus.request('Zulljin', 'start', script: 'buff')
 =end
 
-require File.join(File.dirname(File.expand_path(__FILE__)), 'lib', 'charbus_protocol')
+require_path = if defined?(LICH_DIR)
+  File.join(LICH_DIR, 'scripts', 'custom', 'lib', 'charbus_protocol')
+else
+  File.expand_path('lib/charbus_protocol', File.dirname(__FILE__))
+end
+# `load`, not `require`: charbus_protocol.rb rebuilds CharBus::Protocol from
+# scratch on every execution (its own remove_const at the top), but `require`
+# only ever executes a file once per process. A prior ;lib_charbus run that
+# got as far as requiring this file and then failed leaves it permanently in
+# $LOADED_FEATURES, so a plain `require` here would silently no-op on every
+# later run in that process and never rebuild ::Protocol.
+load "#{require_path}.rb"
 
 # Reload-safe: ;lib_charbus can be re-run. Buffers are plain data, so an
 # orphaned one is harmless — but see the daemon's re-resolution requirement.
-remove_const(:CharBus) if const_defined?(:CharBus, false)
-
-module CharBus
+#
+# Do NOT remove_const(:CharBus) here: charbus_protocol.rb already resets the
+# whole CharBus constant (including ::Protocol) the first time it's required,
+# and require is a no-op on any later reload. Nuking :CharBus again at this
+# point would take ::Protocol down with it, since it lives on the same
+# top-level constant -- reopening the module below is sufficient to reset
+# @buffer/@outbox/@present on reload without touching Protocol.
+module ::CharBus
   EVENT_CAPACITY   = 256
   OUTBOX_CAPACITY  = 64
 

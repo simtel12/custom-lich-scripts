@@ -9,7 +9,8 @@
 require "json"
 require "securerandom"
 
-module CharBus
+Object.send(:remove_const, :CharBus) if Object.const_defined?(:CharBus, false)
+module ::CharBus
   module Protocol
     VERSION = 1
 
