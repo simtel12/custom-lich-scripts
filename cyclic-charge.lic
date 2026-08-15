@@ -1,0 +1,26 @@
+=begin
+  Recharges a cambrinth item whenever it discharges.
+
+  Watches for "Your <item> thrums softly as it discharges" and responds with
+  "charge my <item> <amount>", then goes back to watching. Runs until killed.
+
+  Usage:
+    ;cyclic-charge 10
+=end
+
+amount = Script.current.vars[1]
+
+unless amount =~ /^\d+$/
+  echo 'Usage: ;cyclic-charge <amount>'
+  exit
+end
+
+echo "cyclic-charge: charging to #{amount} on each discharge (kill script to stop)"
+
+trigger = /Your (.*) thrums softly as it discharges/
+
+loop do
+  line = waitfor(trigger.source)
+  item = line[trigger, 1]
+  fput("charge my #{item} #{amount}")
+end
