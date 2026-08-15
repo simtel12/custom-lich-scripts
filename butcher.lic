@@ -1,0 +1,395 @@
+=begin
+  butcher.lic — standalone necromancer butchery of corpses in the current room.
+
+  Extracted from the butchery half of dr-scripts/combat-trainer.lic (LootProcess:
+  butcher_corpse / do_necro_ritual) so corpses can be butchered without running a
+  full combat script. Same ritual order: preserve -> butcher until exhausted ->
+  optional dissect.
+
+  Usage:
+    ;butcher                      butcher every corpse in the room, once
+    ;butcher goblin               only corpses whose noun matches "goblin"
+    ;butcher --count=2            at most 2 butchers per corpse (default: to exhaustion)
+    ;butcher --dissect            dissect each corpse after butchering
+    ;butcher --no-preserve        skip the preserve ritual
+    ;butcher --container=backpack stow extracted parts instead of dropping them
+    ;butcher --keep               leave extracted parts in hand
+    ;butcher --watch              keep watching the room for new corpses until stopped
+    ;butcher --watch=5            same, polling every 5 seconds (default 2)
+    ;butcher --debug              verbose echo of every decision
+    ;butcher help
+
+  YAML settings (character or base yaml), all optional — CLI flags win:
+
+    butcher_settings:
+      count: 2                 # nil/absent = butcher until the corpse is exhausted
+      preserve: true
+      dissect: false
+      part_container: backpack # absent = drop extracted parts
+      keep_parts: false
+      watch_delay: 2
+
+  Falls back to combat-trainer's settings when butcher_settings is absent:
+  thanatology.butcher_count for count, dissect_and_butcher for dissect.
+=end
+
+class Butcher
+  # Stop butchering, but the corpse may still accept a dissection.
+  BUTCHER_EXHAUSTED = [
+    'much too battered and beat up to extract any body parts from',
+    'renders it useless for butchering'
+  ].freeze
+
+  # Corpse is ruined for every further ritual — skip the dissect.
+  CORPSE_RUINED = [
+    'You realize the unfortunate butchery ruins the body for any further attempts at rituals',
+    'A failed or completed ritual has rendered this corpse unusable for your purpose',
+    'prevents a meaningful dissection'
+  ].freeze
+
+  # Targeting missed: no such noun, or the target is still alive.
+  WRONG_CORPSE = [
+    'What were you referring to',
+    'I could not find what you were referring to',
+    'This ritual may only be performed on a corpse'
+  ].freeze
+
+  def initialize
+    args = Script.current.vars[1..].compact
+    if args.any? { |arg| arg =~ /^(help|--help|-h)$/i }
+      show_help
+      exit
+    end
+
+    overrides, @filters = parse_cli(args)
+    @settings = resolve_settings(overrides)
+    @debug = @settings['debug']
+
+    unless DRStats.necromancer?
+      DRC.message('butcher: the butcher ritual is a Necromancer thanatology ritual.')
+      exit
+    end
+
+    @rituals = get_data('spells').rituals
+    @constructs = []
+    @finished = {}
+    @last_ordinal_calc = nil
+
+    debug("settings: #{@settings}")
+    debug("filters: #{@filters}")
+
+    EquipmentManager.new.empty_hands
+
+    if @settings['watch']
+      watch_room
+    else
+      butcher_room
+    end
+    exit
+  end
+
+  def show_help
+    DRC.message(<<~HELP)
+      ;butcher [noun ...] [options]
+
+        --count=N        max butchers per corpse (default: until exhausted)
+        --dissect        dissect after butchering (--no-dissect to disable)
+        --no-preserve    skip the preserve ritual
+        --container=X    put extracted parts in container X
+        --keep           leave extracted parts in hand
+        --drop           drop extracted parts (default)
+        --watch[=SECS]   keep watching the room for corpses until stopped
+        --debug          verbose output
+    HELP
+  end
+
+  def parse_cli(args)
+    overrides = {}
+    filters = []
+
+    args.each do |arg|
+      case arg
+      when /^--count=(\d+)$/i         then overrides['count'] = Regexp.last_match(1).to_i
+      when /^--(no-)?dissect$/i       then overrides['dissect'] = Regexp.last_match(1).nil?
+      when /^--(no-)?preserve$/i      then overrides['preserve'] = Regexp.last_match(1).nil?
+      when /^--container=(.+)$/i      then overrides['part_container'] = Regexp.last_match(1)
+      when /^--keep$/i                then overrides['keep_parts'] = true
+      when /^--drop$/i                then overrides['keep_parts'] = false
+      when /^--watch(?:=(\d+))?$/i
+        overrides['watch'] = true
+        overrides['watch_delay'] = Regexp.last_match(1).to_i if Regexp.last_match(1)
+      when /^--debug$/i               then overrides['debug'] = true
+      when /^--/
+        DRC.message("butcher: unknown option #{arg}")
+        show_help
+        exit
+      else
+        filters << arg.downcase
+      end
+    end
+
+    [overrides, filters]
+  end
+
+  def resolve_settings(overrides)
+    yaml = safe_setting(:butcher_settings) || {}
+    thanatology = safe_setting(:thanatology) || {}
+
+    defaults = {
+      'count' => yaml['count'] || thanatology['butcher_count'],
+      'preserve' => yaml['preserve'].nil? ? true : yaml['preserve'],
+      'dissect' => yaml['dissect'].nil? ? (safe_setting(:dissect_and_butcher) || false) : yaml['dissect'],
+      'part_container' => yaml['part_container'],
+      'keep_parts' => yaml['keep_parts'] || false,
+      'watch' => false,
+      'watch_delay' => yaml['watch_delay'] || 2,
+      'debug' => false
+    }
+
+    defaults.merge(overrides)
+  end
+
+  def safe_setting(key)
+    get_settings.send(key)
+  rescue StandardError
+    nil
+  end
+
+  def debug(message)
+    echo("butcher: #{message}") if @debug
+  end
+
+  # bput returns the matched substring, case-insensitively matched, so compare
+  # case-folded rather than trusting the game's capitalization.
+  def matched?(result, matcher)
+    return false if result.nil? || result.empty?
+
+    Array(matcher).any? { |m| result.downcase.include?(m.to_s.downcase) }
+  end
+
+  def watch_room
+    DRC.message("butcher: watching for corpses, ;k#{Script.current.name} to stop.")
+    loop do
+      butcher_room
+      pause @settings['watch_delay']
+    end
+  end
+
+  def butcher_room
+    dead = DRRoom.dead_npcs
+    # Forget corpses that have left the room so a fresh one with the same
+    # ordinal noun is not skipped.
+    @finished.keys.each { |noun| @finished.delete(noun) unless dead.include?(noun) }
+
+    corpses = dead.reject { |noun| @finished[noun] }
+    corpses = corpses.select { |noun| @filters.any? { |f| strip_npc_ordinal(noun).downcase.include?(f) } } unless @filters.empty?
+
+    if corpses.empty?
+      debug('no corpses to butcher')
+      return
+    end
+
+    corpses.each do |mob_noun|
+      break unless DRRoom.dead_npcs.include?(mob_noun)
+
+      butcher_corpse(mob_noun)
+      @finished[mob_noun] = true
+    end
+  end
+
+  def butcher_corpse(mob_noun)
+    if construct?(mob_noun)
+      debug("#{mob_noun} is a construct, skipping")
+      return
+    end
+
+    DRC.message("butcher: butchering the #{mob_noun}'s corpse")
+
+    # Preserve first — extends part decay and marks the corpse for butchery.
+    perform_ritual(mob_noun, 'preserve') if @settings['preserve']
+
+    butchers_done = 0
+    skip_dissect = false
+    max = @settings['count']
+
+    loop do
+      result = DRC.bput("perform butcher on #{mob_noun}", @rituals['butcher'], WRONG_CORPSE, @rituals['failures'], @rituals['construct'])
+      debug("butcher result: #{result.inspect}")
+
+      if result.empty?
+        skip_dissect = true
+        break
+      end
+
+      if matched?(result, @rituals['construct'])
+        @constructs << strip_npc_ordinal(mob_noun)
+        skip_dissect = true
+        break
+      end
+
+      if matched?(result, WRONG_CORPSE)
+        DRC.message("butcher: failed — wrong or missing corpse target (tried '#{mob_noun}')")
+        skip_dissect = true
+        break
+      end
+
+      if matched?(result, BUTCHER_EXHAUSTED)
+        debug("butcher exhausted (#{result})")
+        break
+      end
+
+      if matched?(result, CORPSE_RUINED)
+        debug("corpse ruined for rituals (#{result}); skipping dissect")
+        skip_dissect = true
+        break
+      end
+
+      if matched?(result, @rituals['failures'])
+        debug("ritual failure (#{result})")
+        skip_dissect = true
+        break
+      end
+
+      waitrt?
+      handle_part
+      butchers_done += 1
+      break if max && butchers_done >= max
+    end
+
+    debug("#{butchers_done} butcher(s) on #{mob_noun}")
+
+    # Dissect last, and only while the corpse is still usable.
+    perform_ritual(mob_noun, 'dissect') if @settings['dissect'] && !skip_dissect
+  end
+
+  # A successful butcher leaves the extracted part in hand.
+  def handle_part
+    part = DRC.right_hand
+    return unless part
+
+    if @settings['keep_parts']
+      debug("keeping #{part}")
+      return
+    end
+
+    if @settings['part_container']
+      return if DRCI.put_away_item?(part, @settings['part_container'])
+
+      debug("could not stow #{part} in #{@settings['part_container']}, dropping instead")
+    end
+
+    DRC.bput("drop my #{part}", 'You drop', 'You discard', 'Please rephrase', 'What were you referring to')
+  end
+
+  def perform_ritual(mob_noun, ritual)
+    return if construct?(mob_noun)
+
+    target = ritual.eql?('dissect') ? dissect_ritual_target(mob_noun) : mob_noun
+    debug("performing #{ritual} on #{target}")
+
+    result = DRC.bput("perform #{ritual} on #{target}", @rituals[ritual], WRONG_CORPSE, @rituals['failures'], @rituals['construct'])
+
+    if matched?(result, @rituals['construct'])
+      @constructs << strip_npc_ordinal(mob_noun)
+    elsif matched?(result, WRONG_CORPSE)
+      DRC.message("butcher: #{ritual} failed — wrong or missing corpse target (tried '#{target}')")
+      dump_ordinal_debug(mob_noun, target) if ritual.eql?('dissect')
+    end
+
+    result
+  end
+
+  # A dissect miss is almost always a bad ordinal: the living+dead room index
+  # disagreed with what the game counts. Dump the roster the ordinal was
+  # computed from so the mismatch is visible in the log.
+  def dump_ordinal_debug(mob_noun, target)
+    info = @last_ordinal_calc || {}
+    DRC.message("butcher: dissect ordinal debug for #{mob_noun.inspect} -> #{target.inspect}")
+    DRC.message("  base=#{info[:base].inspect} dead_index=#{info[:dead_index]} room_index=#{info[:room_index]} source=#{info[:source]}")
+    DRC.message("  DRRoom.npcs (live): #{DRRoom.npcs.inspect}")
+    DRC.message("  DRRoom.dead_npcs:   #{DRRoom.dead_npcs.inspect}")
+
+    npcs = GameObj.npcs || []
+    if npcs.empty?
+      DRC.message('  GameObj.npcs: (empty)')
+      return
+    end
+
+    DRC.message('  GameObj.npcs (room order, live+dead):')
+    npcs.each_with_index do |obj, index|
+      matches = @last_ordinal_calc && npc_matches_dissect_base?(obj, @last_ordinal_calc[:base]) ? ' <- matched base' : ''
+      dead = obj.status.to_s.match?(/dead/i) ? 'DEAD' : 'live'
+      DRC.message("    [#{index}] #{dead} name=#{obj.name.inspect} noun=#{obj.noun.inspect} status=#{obj.status.inspect}#{matches}")
+    end
+  end
+
+  def construct?(mob_noun)
+    @constructs.include?(strip_npc_ordinal(mob_noun))
+  end
+
+  def strip_npc_ordinal(mob_noun)
+    mob_noun.to_s.sub(/\A(?:#{$ORDINALS.join('|')})\s+/i, '')
+  end
+
+  def npc_matches_dissect_base?(obj, base)
+    noun = obj.noun.to_s
+    return true if !noun.empty? && noun.casecmp?(base)
+
+    name = obj.name.to_s.sub(/\A(?:a|an|some|the)\s+/i, '')
+    return true if !name.empty? && name.casecmp?(base)
+
+    name_tail = name.split.last.to_s
+    return true if !name_tail.empty? && name_tail.casecmp?(base)
+
+    base_tail = base.split.last.to_s
+    return true if !noun.empty? && !base_tail.empty? && noun.casecmp?(base_tail)
+
+    false
+  end
+
+  # Living+dead room index for the dead_index-th corpse of this noun.
+  # Prefer GameObj order + dead status; fall back to living count + dead index.
+  def dissect_room_ordinal_index(base, dead_index)
+    seen = 0
+    dead_seen = 0
+    (GameObj.npcs || []).each do |obj|
+      next unless npc_matches_dissect_base?(obj, base)
+
+      if obj.status.to_s.match?(/dead/i)
+        if dead_seen == dead_index
+          @last_ordinal_calc[:source] = 'GameObj scan'
+          return seen
+        end
+
+        dead_seen += 1
+      end
+      seen += 1
+    end
+
+    living_count = DRRoom.npcs.count { |n| strip_npc_ordinal(n).casecmp?(base) }
+    @last_ordinal_calc[:source] = "fallback (live count #{living_count} + dead index #{dead_index})"
+    living_count + dead_index
+  end
+
+  # DISSECT targets by living+dead room ordinal; every other ritual takes the
+  # dead-only noun from DRRoom.dead_npcs. Always ordinal-qualified so a corpse
+  # is never a bare noun when living duplicates share the room.
+  def dissect_ritual_target(mob_noun)
+    base = strip_npc_ordinal(mob_noun)
+    @last_ordinal_calc = { base: base, dead_index: nil, room_index: nil, source: 'none (bare noun)' }
+    return mob_noun if base.empty?
+
+    dead_of_type = DRRoom.dead_npcs.select { |n| strip_npc_ordinal(n).casecmp?(base) }
+    dead_index = dead_of_type.index(mob_noun) ||
+                 dead_of_type.index { |n| strip_npc_ordinal(n).casecmp?(base) } ||
+                 0
+    @last_ordinal_calc[:dead_index] = dead_index
+
+    room_index = dissect_room_ordinal_index(base, dead_index)
+    @last_ordinal_calc[:room_index] = room_index
+    ordinal = $ORDINALS[room_index] || "#{room_index + 1}th"
+    "#{ordinal} #{base}"
+  end
+end
+
+Butcher.new
