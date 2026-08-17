@@ -1,0 +1,33 @@
+=begin
+  favor-sacrifice: check the current favor count and, if below
+  settings.favor_goal, run checkfavors, then travel to room 5865 and
+  complete the orb sacrifice on the altar there.
+=end
+
+class FavorSacrifice
+  def initialize
+    @settings = get_settings
+    check_favors
+  end
+
+  def check_favors
+    return unless @settings.favor_goal
+
+    /(\d+)/ =~ DRC.bput('favor', 'You currently have \d+', 'You are not currently')
+    favor_count = Regexp.last_match(1).to_i
+    return if favor_count >= @settings.favor_goal
+
+    DRC.wait_for_script_to_complete('checkfavors')
+    DRC.wait_for_script_to_complete('go2', ['5865'])
+    rub_orb
+    fput('get my orb')
+    fput('put my orb on altar')
+  end
+
+  def rub_orb
+    until DRC.bput('rub my orb', 'not yet fully prepared', 'lacking in the type of sacrifice the orb requires', 'your sacrifice is properly prepared') == 'your sacrifice is properly prepared'
+    end
+  end
+end
+
+FavorSacrifice.new
