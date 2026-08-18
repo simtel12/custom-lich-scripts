@@ -22,11 +22,19 @@
   Either way t2's before_dying block still runs, so scripts it launched are
   cleaned up and cyclics are released per cyclic_no_release.
 
+  Add 'exit' to also quit the game once T2 has fully stopped -- not merely
+  signalled to shut down, but actually gone: $T2 is nil and ';t2' is no longer
+  in the running-scripts list. That can be a while yet, per the wait described
+  above. t2stop stays running to poll for it, then sends 'exit' itself.
+  Combine with 'now' to speed T2 on its way there.
+
   Examples:
     ;t2stop           # wrap up after the current sub-script finishes
     ;t2stop now       # stop the current sub-script too, wrap up promptly
     ;t2stop 45        # keep training for 45 more minutes, then wrap up
     ;t2stop 45 now    # both
+    ;t2stop 60 exit   # keep training for an hour, then wrap up and exit
+    ;t2stop now exit  # wrap up promptly, then exit once T2 has stopped
     ;t2stop cancel    # call off a pending shutdown or a pending timer
 =end
 
@@ -36,6 +44,7 @@ POLL_INTERVAL = 5
 minutes = nil
 want_now = false
 want_cancel = false
+want_exit = false
 unknown = []
 
 Array(Script.current.vars[1..-1]).each do |arg|
@@ -44,6 +53,8 @@ Array(Script.current.vars[1..-1]).each do |arg|
     minutes = arg.to_i
   when /^now$/i
     want_now = true
+  when /^exit$/i
+    want_exit = true
   when /^(cancel|noshutdown)$/i
     want_cancel = true
   else
@@ -53,12 +64,12 @@ end
 
 unless unknown.empty?
   echo "Unrecognized argument: #{unknown.join(' ')}"
-  echo 'Usage: ;t2stop [minutes] [now|cancel]'
+  echo 'Usage: ;t2stop [minutes] [now] [exit] | ;t2stop cancel'
   exit
 end
 
-if want_cancel && (want_now || minutes)
-  echo "'cancel' cannot be combined with a duration or 'now' -- pick one."
+if want_cancel && (want_now || want_exit || minutes)
+  echo "'cancel' cannot be combined with a duration, 'now', or 'exit' -- pick one."
   exit
 end
 
@@ -111,6 +122,7 @@ if minutes.to_i > 0
 
     if $T2.nil?
       echo 'T2 is no longer running; nothing to signal.'
+      fput('exit') if want_exit
       exit
     end
   end
@@ -124,6 +136,7 @@ t2 = $T2
 
 if t2.nil?
   echo 'T2 is no longer running; nothing to signal.'
+  fput('exit') if want_exit
   exit
 end
 
@@ -134,26 +147,38 @@ else
   echo 'T2 will run its t2_after_shutdown actions and exit.'
 end
 
-exit unless want_now
+if want_now
+  if t2.spare_all_scripts?
+    echo "t2_no_kill is set to '#{T2::KILL_ALL_KEYWORD}', so no sub-script will be stopped."
+    echo 'T2 will shut down once the current one finishes on its own.'
+  else
+    spared = t2.scripts_to_spare
+    launched = Array(t2.instance_variable_get(:@launched_scripts))
+    running = launched
+              .reject { |script_name| spared.include?(script_name) }
+              .select { |script_name| Script.running?(script_name) }
 
-if t2.spare_all_scripts?
-  echo "t2_no_kill is set to '#{T2::KILL_ALL_KEYWORD}', so no sub-script will be stopped."
-  echo 'T2 will shut down once the current one finishes on its own.'
-  exit
+    if running.empty?
+      echo 'T2 has no sub-script of its own running; it will shut down on its next check.'
+    else
+      running.each do |script_name|
+        echo "Stopping #{script_name} so T2 does not have to wait for it."
+        stop_script(script_name)
+      end
+    end
+  end
 end
 
-spared = t2.scripts_to_spare
-launched = Array(t2.instance_variable_get(:@launched_scripts))
-running = launched
-          .reject { |script_name| spared.include?(script_name) }
-          .select { |script_name| Script.running?(script_name) }
+exit unless want_exit
 
-if running.empty?
-  echo 'T2 has no sub-script of its own running; it will shut down on its next check.'
-  exit
+echo 'Will exit the game once T2 has stopped.'
+
+# Nothing here reads the game stream; don't accumulate a buffer while idle.
+Script.current.want_downstream = false
+
+until $T2.nil? || !Script.running?('t2')
+  pause POLL_INTERVAL
 end
 
-running.each do |script_name|
-  echo "Stopping #{script_name} so T2 does not have to wait for it."
-  stop_script(script_name)
-end
+echo 'T2 has stopped; exiting the game.'
+fput('exit')
