@@ -1,0 +1,148 @@
+=begin
+  perceive-health: repeatedly PERCEIVE HEALTH to train Empathy.
+
+  A perceive that consumes roundtime *and* raises the Empathy mindstate counts
+  as a success, and is followed by a 120 second wait (the game enforces a
+  cooldown between successful perceives). Anything else -- "You fail to sense
+  anything", the "not ready to do that again" cooldown message, or a perceive
+  that taught nothing -- retries as soon as roundtime is over.
+
+  Examples:
+    ;perceive-health
+    ;perceive-health 90     # use a 90 second wait after a learning perceive
+=end
+
+class PerceiveHealth
+  MAX_MINDSTATE = 34
+  SAMPLE_INTERVAL = 0.2
+  SETTLE_SECONDS = 2
+
+  @@time_in = Time.now
+  @@start_mindstate = nil
+  @@start_progress = nil
+  @@successes = 0
+
+  def self.time_in
+    @@time_in
+  end
+
+  def self.start_mindstate
+    @@start_mindstate
+  end
+
+  def self.start_progress
+    @@start_progress
+  end
+
+  def self.successes
+    @@successes
+  end
+
+  # Ranks earned in a skill, as a float (whole ranks + percent to next rank).
+  # DRSkill.getxp is the 0-34 mindstate, which drains as it converts to ranks,
+  # so it can't be differenced to measure what was actually learned.
+  def self.progress(skill)
+    DRSkill.getrank(skill) + (DRSkill.getpercent(skill) / 100.0)
+  end
+
+  def initialize
+    arg_definitions = [
+      [
+        { name: 'wait', regex: /^\d+$/, optional: true,
+          description: 'Seconds to wait after a perceive that taught Empathy (default: 120)' },
+        { name: 'script_summary', optional: true,
+          description: 'Train Empathy with repeated PERCEIVE HEALTH' }
+      ]
+    ]
+
+    args = parse_args(arg_definitions)
+    @wait = (args.wait || 120).to_i
+
+    unless DRStats.empath?
+      DRC.message('PERCEIVE HEALTH is an Empath ability.')
+      exit
+    end
+
+    @@start_mindstate = DRSkill.getxp('Empathy')
+    @@start_progress = PerceiveHealth.progress('Empathy')
+
+    echo "Empathy mindstate: #{@@start_mindstate}, wait after learning: #{@wait}s"
+
+    loop { perceive_once }
+  end
+
+  def perceive_once
+    before = DRSkill.getxp('Empathy')
+    # Nothing can be learned at a capped mindstate, so retrying immediately
+    # would just spam the command until it drains.
+    if before >= MAX_MINDSTATE
+      echo "Empathy mindstate capped at #{MAX_MINDSTATE} -- waiting #{@wait}s"
+      pause @wait
+      return
+    end
+
+    result = DRC.bput('perceive health',
+                      'You fail to sense',
+                      "You're not ready to do that again, yet",
+                      'Something in the area is interfering',
+                      'You reach out',
+                      'You sense:',
+                      'Roundtime')
+    learned = watch_for_learning(before)
+
+    case result
+    when 'You reach out', 'You sense:', 'Roundtime'
+      if learned
+        @@successes += 1
+        echo "Learned (mindstate now #{DRSkill.getxp('Empathy')}) -- waiting #{@wait}s"
+        pause @wait
+      else
+        echo 'Perceived, but learned nothing -- retrying'
+      end
+    when "You're not ready to do that again, yet"
+      # No roundtime on this one; back off a little so the room isn't spammed.
+      echo 'Not ready to perceive again yet -- retrying shortly'
+      pause 5
+    else
+      echo "#{result} -- retrying"
+    end
+  end
+
+  # Waits out roundtime and reports whether Empathy was taught anything.
+  #
+  # Comparing the mindstate before and after roundtime is not reliable: the exp
+  # pulse that converts mindstate into ranks can fire during a long roundtime,
+  # so a perceive that taught something can read back at its starting value by
+  # the time roundtime ends. The mindstate only ever moves *up* when a skill is
+  # taught (pulses and clear-mind move it down), so sample it throughout and
+  # treat any increase as a learn, wherever it started from.
+  def watch_for_learning(before)
+    previous = before
+    learned = false
+    # Keep sampling briefly past roundtime in case the exp line lands late.
+    settle_until = Time.now + SETTLE_SECONDS
+
+    loop do
+      current = DRSkill.getxp('Empathy')
+      learned = true if current > previous
+      previous = current
+      break if checkrt <= 0 && Time.now >= settle_until
+
+      pause SAMPLE_INTERVAL
+    end
+
+    learned
+  end
+end
+
+before_dying do
+  if PerceiveHealth.start_progress
+    minutes = ((Time.now - PerceiveHealth.time_in) / 60).to_i
+    ranks = (PerceiveHealth.progress('Empathy') - PerceiveHealth.start_progress).round(2)
+    echo "Empathy ranks earned: #{ranks} (now #{DRSkill.getrank('Empathy')} at #{DRSkill.getpercent('Empathy')}%)"
+    echo "Mindstate #{PerceiveHealth.start_mindstate} -> #{DRSkill.getxp('Empathy')}, " \
+         "#{PerceiveHealth.successes} learning perceives in #{minutes} minutes"
+  end
+end
+
+PerceiveHealth.new

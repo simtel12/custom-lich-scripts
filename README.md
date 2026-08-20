@@ -32,6 +32,7 @@ Everything below is a standalone Lich script, unrelated to CharBus.
 | [`escort.lic`](escort.lic) | Local stand-in for obsolete mapdb `StringProcs` that used to call `start_script('escort')` — handles a handful of specific room transitions (monastery, galley/ferry) the map data no longer covers directly. |
 | [`force-disconnect.lic`](force-disconnect.lic) | Forcibly closes the detachable frontend socket. |
 | [`necroheal.lic`](necroheal.lic) | Lets a necromancer's self-healing (Consumed Flesh/Devour) run via `hunting-buddy`/`combat-trainer`, polling `HEALTH` and signaling a graceful stop once wounds clear. |
+| [`perceive-health.lic`](perceive-health.lic) | Empath Empathy trainer: repeats `PERCEIVE HEALTH`, waiting 120s after a perceive that taught something and retrying immediately after one that didn't. |
 | [`powerwalk.rb`](powerwalk.rb) / [`pwgo2.lic`](pwgo2.lic) | `powerwalk.rb` is an extractable helper (sends a perceive + waits RT after a room move); `pwgo2.lic` is a thin go2-style traveler built on it, `load`ed live so edits apply without a Lich restart. |
 | [`roomid.lic`](roomid.lic) | One-liner: echoes `Room.current.id`. |
 | [`roomlookup.lic`](roomlookup.lic) | Looks up a map room's title/description/paths by Lich room id (defaults to the current room). |
