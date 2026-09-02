@@ -68,6 +68,11 @@ module UberCombat
   class ZoneTable
     DEFAULT_PATH = File.expand_path("../data/base-uc-zones.yaml", __dir__)
 
+    # An empty table is never legitimate. It reports every skill as having no
+    # admissible zone, which reads exactly like a character with nothing to
+    # hunt, so it must be loud.
+    class EmptyTable < StandardError; end
+
     attr_reader :zones, :critters
 
     def self.load(path = DEFAULT_PATH)
@@ -78,10 +83,25 @@ module UberCombat
     # Production entry point. Lich resolves get_data('uc-zones') to the runtime
     # mirror at lich-5/scripts/data/custom/base-uc-zones.yaml.
     def self.from_game_data
-      new(get_data("uc-zones").to_h)
+      table = new(fetch_game_data)
+      return table unless table.zones.empty?
+
+      raise EmptyTable, "get_data('uc-zones') returned no zones. Check that " \
+                        "scripts/data/custom/base-uc-zones.yaml exists and parses."
+    end
+
+    # The one call that needs the Lich runtime, kept alone so the parsing above
+    # it can be tested without a game session.
+    def self.fetch_game_data
+      get_data("uc-zones").to_h
     end
 
     def initialize(parsed)
+      # get_data returns an OpenStruct (setup_files.rb:295-298), and
+      # OpenStruct#to_h symbolises the TOP LEVEL only: "zones" arrives as
+      # :zones while every nested key is still a String. YAML.load_file gives
+      # strings throughout. Normalise the one level that differs.
+      parsed = parsed.to_h.transform_keys(&:to_s)
       @critters = parsed["critters"] || {}
       @zones = (parsed["zones"] || {}).map { |key, data| Zone.new(key, data) }
       @by_key = @zones.each_with_object({}) { |zone, index| index[zone.key] = zone }

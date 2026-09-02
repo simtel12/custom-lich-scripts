@@ -54,7 +54,8 @@ class UcZonesReport
       return
     end
 
-    DRC.message(format('=== uc-zones: %s @ room %d ===', XMLData.name, room.id))
+    DRC.message(format('=== uc-zones: %s @ room %d, %d zones loaded ===',
+                       XMLData.name, room.id, @zone_table.zones.size))
     itinerary = @picker.build_itinerary
     report_itinerary(itinerary)
     report_candidates(distances)

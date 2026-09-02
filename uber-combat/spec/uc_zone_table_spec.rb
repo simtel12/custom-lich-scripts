@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "ostruct"
+
 # The zone table is the loader for base-uc-zones.yaml.
 # Spec: notes/uber-combat/33-zone-picker-spec.md section 1.5 and 1.6.
 RSpec.describe UberCombat::ZoneTable do
@@ -40,6 +42,48 @@ RSpec.describe UberCombat::ZoneTable do
 
     it "finds no zone opted in to low-confidence auto-selection" do
       expect(table.zones.count(&:allow_low_confidence_auto_select?)).to eq(0)
+    end
+  end
+
+  # ZoneTable.load reads the YAML directly, so every test above sees STRING
+  # keys. Production does not: get_data returns an OpenStruct
+  # (setup_files.rb:295-298), and OpenStruct#to_h symbolises the TOP LEVEL
+  # only, leaving the nested keys as strings. That mismatch silently emptied
+  # the table for a real character, and no test caught it because
+  # from_game_data was the one method with no coverage.
+  describe "the key shape get_data actually returns" do
+    let(:game_shape) do
+      OpenStruct.new(YAML.load_file(described_class::DEFAULT_PATH, aliases: true)).to_h
+    end
+
+    it "loads every zone from a hash with symbol top-level keys" do
+      expect(described_class.new(game_shape).zones.size).to eq(363)
+    end
+
+    it "loads every critter record from that same hash" do
+      expect(described_class.new(game_shape).critters.size).to eq(306)
+    end
+
+    it "still reads a band through the nested string keys" do
+      zone = described_class.new(game_shape).zone("grave_worms")
+
+      expect([zone.rank_min, zone.rank_max]).to eq([90, 130])
+    end
+  end
+
+  describe ".from_game_data" do
+    it "refuses an empty table instead of reporting zero candidates" do
+      allow(described_class).to receive(:fetch_game_data).and_return({})
+
+      expect { described_class.from_game_data }
+        .to raise_error(described_class::EmptyTable, /base-uc-zones\.yaml/)
+    end
+
+    it "builds the table when the game data arrives" do
+      allow(described_class).to receive(:fetch_game_data)
+        .and_return(OpenStruct.new(YAML.load_file(described_class::DEFAULT_PATH, aliases: true)).to_h)
+
+      expect(described_class.from_game_data.zones.size).to eq(363)
     end
   end
 

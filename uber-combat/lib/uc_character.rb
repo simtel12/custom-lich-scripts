@@ -45,10 +45,18 @@ module UberCombat
     # treats as "nothing more to gain" (CT:199, CT:5844).
     MINDLOCK = 34
 
-    # The 12 weapon skills, in the order the game reports them.
+    # Every weapon skill the game reports, in its own order
+    # (drvariables.rb:116-135). That list also carries Parry Ability, which is
+    # a defence, and Melee Mastery, Missile Mastery and Expertise, which modify
+    # rather than kill. All four are excluded here.
+    #
+    # Do NOT rebuild this from a character's exp all. The first version was
+    # taken from one 12-weapon character and silently had no place for Large
+    # Edged, Twohanded Edged or Staves.
     WEAPON_SKILLS = [
-      "Small Edged", "Small Blunt", "Large Blunt", "Twohanded Blunt",
-      "Slings", "Bow", "Crossbow", "Polearms",
+      "Small Edged", "Large Edged", "Twohanded Edged",
+      "Small Blunt", "Large Blunt", "Twohanded Blunt",
+      "Slings", "Bow", "Crossbow", "Staves", "Polearms",
       "Light Thrown", "Heavy Thrown", "Brawling", "Offhand Weapon"
     ].freeze
 

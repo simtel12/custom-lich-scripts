@@ -22,6 +22,33 @@ RSpec.describe UberCombat::Character do
     end
   end
 
+  # The first list was built from one character's exp all, which is exactly the
+  # thing the design forbids. Zurvan has Large Edged, which was missing, so the
+  # skill could never have been given a leg or reported as unplaced.
+  describe "the weapon skill list" do
+    # drvariables.rb:116-135 minus Parry Ability (a defence) and the three
+    # modifiers, which end no fight: Melee Mastery, Missile Mastery, Expertise.
+    let(:canonical_weapons) do
+      ["Small Edged", "Large Edged", "Twohanded Edged",
+       "Small Blunt", "Large Blunt", "Twohanded Blunt",
+       "Slings", "Bow", "Crossbow", "Staves", "Polearms",
+       "Light Thrown", "Heavy Thrown", "Brawling", "Offhand Weapon"]
+    end
+
+    it "holds every weapon skill the game reports" do
+      expect(described_class::WEAPON_SKILLS).to match_array(canonical_weapons)
+    end
+
+    it "excludes the masteries and Expertise, which modify rather than kill" do
+      expect(described_class::KILLING_SET)
+        .not_to include("Melee Mastery", "Missile Mastery", "Expertise")
+    end
+
+    it "excludes Parry Ability, which is a defence" do
+      expect(described_class::TRAINING_SET).not_to include("Parry Ability")
+    end
+  end
+
   describe "#defensive_metric" do
     # Drazoken, unbuffed (fixtures/drazoken-exp-2026-08-14.md:87).
     let(:drazoken) do
