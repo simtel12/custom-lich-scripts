@@ -1,0 +1,241 @@
+# frozen_string_literal: true
+
+# Test plan cases 6, 7, 8 and 13 (33-zone-picker-spec.md section 7).
+RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
+  # Drazoken's real weapon vector (fixtures/drazoken-exp-2026-08-14.md:122).
+  let(:weapon_vector) do
+    {
+      "Small Edged"     => 148,
+      "Brawling"        => 135,
+      "Bow"             => 120,
+      "Heavy Thrown"    => 100,
+      "Large Blunt"     => 92,
+      "Crossbow"        => 72,
+      "Polearms"        => 47,
+      "Light Thrown"    => 47,
+      "Twohanded Blunt" => 44,
+      "Offhand Weapon"  => 40,
+      "Small Blunt"     => 36,
+      "Slings"          => 32
+    }
+  end
+
+  let(:open_zone) { UberCombat::Zone.new("anywhere", { "rank" => { "min" => 0, "max" => 1000 } }) }
+
+  def picker_with(zones, skills = {})
+    character = UberCombat::Character.new(
+      FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
+    )
+    described_class.new(character, FakeZoneTable.new(zones))
+  end
+
+  describe "#build_legs, width-bounded clustering" do
+    # Every skill can hunt anywhere, so this isolates the width rule itself.
+    def leg_skills(width)
+      zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
+      picker_with([open_zone])
+        .build_legs(weapon_vector, zones_by_skill, width)
+        .map { |leg| leg[:skills] }
+    end
+
+    it "reproduces the fixture's three legs at the default width" do
+      expect(leg_skills(40)).to eq(
+        [
+          ["Small Edged", "Brawling", "Bow"],
+          ["Heavy Thrown", "Large Blunt", "Crossbow"],
+          ["Polearms", "Light Thrown", "Twohanded Blunt", "Offhand Weapon", "Small Blunt", "Slings"]
+        ]
+      )
+    end
+
+    # CORRECTION to fixtures/drazoken-exp-2026-08-14.md:127 and to the test plan
+    # at 33-zone-picker-spec.md section 7 case 6. Both claim the legs are
+    # identical for every width in 30 to 50. Measured against this
+    # implementation, the true stable band is 28 to 47. At width 48 the leader
+    # gap of 148 minus 100 closes and Heavy Thrown joins leg 1.
+    it "gives the same legs at every width in the measured stable band" do
+      (28..47).each do |width|
+        expect(leg_skills(width)).to eq(leg_skills(40))
+      end
+    end
+
+    it "changes the leg membership at the top of that band" do
+      expect(leg_skills(48)).not_to eq(leg_skills(40))
+      expect(leg_skills(48).map(&:size)).to eq([4, 5, 3])
+    end
+
+    it "keeps the leg count at three well past the stable band" do
+      (28..55).each do |width|
+        expect(leg_skills(width).size).to eq(3)
+      end
+    end
+
+    it "keeps the default width inside the stable band" do
+      expect(described_class::LEG_WIDTH_RANKS).to be_between(28, 47)
+    end
+
+    it "gives a skill its own leg when no other skill is within the width" do
+      ranks = { "Small Edged" => 148, "Slings" => 32 }
+      zones_by_skill = ranks.keys.to_h { |skill| [skill, [open_zone]] }
+
+      legs = picker_with([open_zone]).build_legs(ranks, zones_by_skill, 40)
+
+      expect(legs.map { |leg| leg[:skills] }).to eq([["Small Edged"], ["Slings"]])
+    end
+
+    it "refuses to cluster two skills that share no admissible zone" do
+      near = UberCombat::Zone.new("near", { "rank" => { "min" => 100, "max" => 160 } })
+      far = UberCombat::Zone.new("far", { "rank" => { "min" => 100, "max" => 160 } })
+      ranks = { "Small Edged" => 148, "Brawling" => 135 }
+      zones_by_skill = { "Small Edged" => [near], "Brawling" => [far] }
+
+      legs = picker_with([near, far]).build_legs(ranks, zones_by_skill, 40)
+
+      expect(legs.map { |leg| leg[:skills] }).to eq([["Small Edged"], ["Brawling"]])
+    end
+  end
+
+  # REGRESSION GUARD. Gap-chaining must never be reintroduced. This helper is
+  # test-only code and must never appear in lib/.
+  describe "the gap-chaining failure mode this design rejects" do
+    def gap_chained_legs(threshold)
+      ordered = weapon_vector.keys.sort_by { |skill| -weapon_vector[skill] }
+      legs = [[ordered.first]]
+      ordered.each_cons(2) do |previous, current|
+        if weapon_vector[previous] - weapon_vector[current] > threshold
+          legs << [current]
+        else
+          legs.last << current
+        end
+      end
+      legs
+    end
+
+    it "collapses the whole weapon vector into one leg at any threshold of 25 or more" do
+      expect(gap_chained_legs(25).size).to eq(1)
+      expect(gap_chained_legs(40).size).to eq(1)
+    end
+
+    it "is why width-bounded clustering is the algorithm of record" do
+      expect(gap_chained_legs(25).size).to eq(1)
+      expect(leg_count_at_default_width).to eq(3)
+    end
+
+    def leg_count_at_default_width
+      zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
+      picker_with([open_zone]).build_legs(weapon_vector, zones_by_skill, 40).size
+    end
+  end
+
+  describe "#assign_debilitation" do
+    it "attaches Debilitation to a leg whose zone band admits it" do
+      zone = UberCombat::Zone.new("mid", { "rank" => { "min" => 120, "max" => 148 } })
+      legs = [{ skills: ["Small Edged"], zone_candidates: [zone] }]
+
+      carrier = picker_with([zone]).assign_debilitation(legs, 138)
+
+      expect(carrier[:skills]).to eq(["Small Edged", "Debilitation"])
+    end
+
+    it "leaves Debilitation untrained when no leg's zone admits it" do
+      zone = UberCombat::Zone.new("high", { "rank" => { "min" => 200, "max" => 250 } })
+      legs = [{ skills: ["Small Edged"], zone_candidates: [zone] }]
+
+      carrier = picker_with([zone]).assign_debilitation(legs, 138)
+
+      expect(carrier).to be_nil
+      expect(legs.first[:skills]).to eq(["Small Edged"])
+    end
+
+    it "never gives Debilitation a leg of its own" do
+      zone = UberCombat::Zone.new("high", { "rank" => { "min" => 200, "max" => 250 } })
+      legs = [{ skills: ["Small Edged"], zone_candidates: [zone] }]
+
+      picker_with([zone]).assign_debilitation(legs, 138)
+
+      expect(legs.size).to eq(1)
+    end
+  end
+
+  describe "#build_itinerary" do
+    let(:zones) do
+      [
+        UberCombat::Zone.new("tight", { "rank" => { "min" => 140, "max" => 150 } }),
+        UberCombat::Zone.new("wide", { "rank" => { "min" => 100, "max" => 200 } })
+      ]
+    end
+
+    it "picks the narrowest band when several zones admit the same leg" do
+      itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["tight"])
+    end
+
+    it "orders the legs by descending rank" do
+      itinerary = picker_with(zones, "Small Edged" => 148, "Bow" => 105).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:skills].first }).to eq(["Small Edged", "Bow"])
+    end
+
+    it "records the stance policy and the weapon key the policy is written under" do
+      itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Small Edged")
+    end
+
+    it "keys a magic-led leg's stance on the highest weapon skill" do
+      itinerary = picker_with(zones, "Targeted Magic" => 148, "Bow" => 30).build_itinerary
+
+      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Bow")
+    end
+
+    it "reports a skill whose rank no zone band covers" do
+      itinerary = picker_with(zones, "Small Edged" => 900).build_itinerary
+
+      expect(itinerary.unplaced).to contain_exactly(
+        hash_including(skill: "Small Edged", reason: :no_band_in_range)
+      )
+    end
+
+    it "reports a skill blocked only by low rank confidence" do
+      low = UberCombat::Zone.new("low_conf",
+                                 { "rank" => { "min" => 140, "max" => 150 }, "rank_confidence" => "low" })
+
+      itinerary = picker_with([low], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.unplaced).to contain_exactly(
+        hash_including(skill: "Small Edged", reason: :confidence_excluded)
+      )
+    end
+
+    it "reports a skill blocked only by the defensive ceiling" do
+      character = UberCombat::Character.new(
+        FakeSkills.new("Evasion" => 10, "Shield Usage" => 10, "Parry Ability" => 10,
+                       "Small Edged" => 148)
+      )
+      picker = described_class.new(character, FakeZoneTable.new(zones))
+
+      expect(picker.build_itinerary.unplaced).to contain_exactly(
+        hash_including(skill: "Small Edged", reason: :defense_ceiling)
+      )
+    end
+
+    it "returns no legs at all when the defensive metric admits nothing" do
+      character = UberCombat::Character.new(
+        FakeSkills.new("Evasion" => 10, "Shield Usage" => 10, "Parry Ability" => 10,
+                       "Small Edged" => 148, "Bow" => 105)
+      )
+      picker = described_class.new(character, FakeZoneTable.new(zones))
+      itinerary = picker.build_itinerary
+
+      expect(itinerary.legs).to be_empty
+      expect(itinerary.unplaced.map { |row| row[:skill] }).to contain_exactly("Small Edged", "Bow")
+    end
+
+    it "does not report a skill the character has never trained" do
+      itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.unplaced.map { |row| row[:skill] }).not_to include("Slings")
+    end
+  end
+end
