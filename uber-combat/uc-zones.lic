@@ -73,8 +73,9 @@ class UcZonesReport
     itinerary.legs.each_with_index do |leg, index|
       stance = leg[:stance]
       DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
-      DRC.message(format('    zone=%-24s stance=%-12s order_mode=%s',
-                         leg[:zone_key], stance[:policy], stance[:order_mode]), false)
+      DRC.message(format('    zone=%-24s stance=%-12s defences=%s',
+                         leg[:zone_key], stance[:policy],
+                         @character.stance_order(stance[:policy]).join(' > ')), false)
     end
   end
 

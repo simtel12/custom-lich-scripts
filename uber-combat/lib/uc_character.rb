@@ -35,12 +35,11 @@ module UberCombat
 
     STANCES = [:spread, :concentrated].freeze
 
-    # How the three defences are ordered for CT. This is a separate axis from
-    # STANCES, which decides admissibility. :spread and :concentrated order to
-    # match their own policy. :dynamic refines :spread by choosing the second
-    # slot on mindstate instead of rank, and it is only ever paired with the
-    # :spread policy (user, Wave 7).
-    ORDER_MODES = [:spread, :concentrated, :dynamic].freeze
+    # The order modes are the same two policies. There is no third, dynamic
+    # mode: CT already picks between the first two defences by learning need,
+    # every combat cycle, and doing it ourselves would have needed
+    # strict_weapon_stance true, which switches CT's version off (user, Wave 7).
+    ORDER_MODES = STANCES
 
     # DRSkill.getxp reports a 0-34 mindstate. 34 is the mindlocked sentinel CT
     # treats as "nothing more to gain" (CT:199, CT:5844).
@@ -95,25 +94,24 @@ module UberCombat
     # takes the remainder, slot 3 takes what is left (CT:350-354). Most
     # characters hold fewer than 200 points, so slot 2 is a real allocation.
     #
-    # The strong defence always leads. The second slot is what the mode picks:
-    # the middle defence for :concentrated (the lagging one is deliberately
-    # starved), the lagging defence for :spread, and the defence with the most
-    # room to learn for :dynamic.
+    # What this list actually controls is SLOT 3. With strict_weapon_stance
+    # false, the shipped default (base.yaml:104), CT re-sorts the first two by
+    # learning need every combat cycle and leaves the third alone (CT:329-335,
+    # CT:6628-6636). So the mode chooses which defence is banished, and CT
+    # splits the points between the two survivors.
     #
-    # This order only survives when settings.strict_weapon_stance is true. With
-    # it false CT re-sorts the first two by sort_by_rate_then_rank (CT:329-335,
-    # CT:6628-6636), which sorts ascending by mindstate and would displace the
-    # strong defence from slot 1.
+    # :spread banishes the middle defence, keeping the lagging one in play so
+    # that it trains. :concentrated banishes the lagging one.
+    #
+    # Slot 1 is still the strongest defence. That matters only if someone sets
+    # strict_weapon_stance true, and it is the right answer in that case.
     def stance_order(mode)
       raise ArgumentError, "unknown stance order mode: #{mode.inspect}" unless ORDER_MODES.include?(mode)
 
-      strongest, *rest = DEFENSE_SKILLS.sort_by { |skill| -rank_of(skill) }
-      second = case mode
-               when :concentrated then rest.first
-               when :spread then rest.last
-               when :dynamic then rest.min_by { |skill| [mindstate_of(skill), rank_of(skill)] }
-               end
-      [strongest, second] + (rest - [second])
+      strongest, middle, lagging = DEFENSE_SKILLS.sort_by { |skill| -rank_of(skill) }
+      return [strongest, middle, lagging] if mode == :concentrated
+
+      [strongest, lagging, middle]
     end
   end
 end

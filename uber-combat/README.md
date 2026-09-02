@@ -15,7 +15,7 @@ and it issues no game commands.
 
 | File | Contents |
 | --- | --- |
-| `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the stance ordering |
+| `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the defence ordering |
 | `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, critter lookup |
 | `lib/uc_zone_picker.rb` | Admissibility, clustering, the itinerary builder |
 | `lib/uc_leg_tracker.rb` | Leg advancement: the hard exit, mindlock, no-gain, reselect |
@@ -110,3 +110,5 @@ ln -sfn ../../../../custom-scripts/uber-combat/lib/uc_character.rb uc_character.
 6. `LegTracker` owns no cadence. The caller decides when a tick happens and
    when a fight ends. Give it no timer.
 7. Debilitation can neither lead a leg nor end one. It is always a passenger.
+8. The defence order chooses slot 3, not slot 1. Leave `strict_weapon_stance`
+   false and let combat-trainer split the points between the first two.
