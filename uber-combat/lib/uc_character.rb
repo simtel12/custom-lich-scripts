@@ -27,9 +27,17 @@ module UberCombat
     DEFENSE_SKILLS = ["Evasion", "Shield Usage", "Parry Ability"].freeze
 
     # These two constants share a value and are NOT the same knob.
+    #
     # OUTLIER_THRESHOLD decides how far below the middle counts as an outlier.
-    # LOW_WEIGHT decides how much the low defence contributes to the spread pole.
-    # Tuning one must never move the other (99-progress.md:41-44).
+    # It is a judgement call and it can be tuned.
+    #
+    # LOW_WEIGHT is not a judgement call. Every character has at least 180
+    # defensive stance points (user, game knowledge), and CT pours them
+    # greedily, so the split is 100 / 80 / 0. The second defence therefore
+    # receives 80 percent of what the first receives, and 0.8 is that ratio.
+    # Do not tune it without a reason grounded in the game.
+    #
+    # Tuning one must never move the other.
     OUTLIER_THRESHOLD = 0.8
     LOW_WEIGHT = 0.8
 
