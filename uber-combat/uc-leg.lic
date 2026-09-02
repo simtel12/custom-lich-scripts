@@ -1,0 +1,177 @@
+# frozen_string_literal: true
+
+=begin
+  uc-leg: read-only diagnostic for the uber-combat leg-overlay mapper.
+
+  Builds the current character's live UberCombat::Character and
+  UberCombat::ZoneTable, asks UberCombat::ZonePicker for its itinerary (same
+  call as uc-zones.lic), then for EACH leg runs it through
+  UberCombat::LegOverlay to print the exact YAML that leg's profile overlay
+  would contain, the launch line a person would type to run it, and that
+  leg's gap report. Issues no game command and writes no file -- rules 1 and
+  2 in custom-scripts/uber-combat/README.md ("Rules that this code obeys"),
+  and the same read-only-first discipline uc-zones.lic already used to catch
+  two real bugs before anything could act on them. Saving the overlay to
+  disk is a later packet, gated on a human running this script in game
+  first.
+
+  Reads two Lich-facing inputs LegOverlay does not read itself (it is pure --
+  see lib/uc_leg_overlay.rb's header comment): the uc_weapons / uc_spells
+  catalogue off get_settings, and the canonical spell-name list off
+  get_data('spells'). Both go through UberCombat::LegSettings first
+  (lib/uc_leg_settings.rb), the ONE place that normalises the shape those two
+  calls actually hand over -- verified against the real pipeline in
+  spec/uc_leg_settings_spec.rb, not assumed. See that file's header comment
+  for why get_settings needed its own verification rather than reusing
+  uc_zone_table.rb's get_data fix.
+
+  Examples:
+    ;uc-leg
+=end
+
+# load (not require): edits to the uber-combat lib take effect without
+# restarting Lich. Same rationale as uc-zones.lic's load of its own libs.
+lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
+load File.join(lib_dir, 'uc_character.rb')
+load File.join(lib_dir, 'uc_zone_table.rb')
+load File.join(lib_dir, 'uc_zone_picker.rb')
+load File.join(lib_dir, 'uc_leg_overlay.rb')
+load File.join(lib_dir, 'uc_leg_settings.rb')
+
+require 'yaml'
+
+# Owns only presentation and the Lich-input normalisation LegSettings
+# performs. All overlay logic stays in the uber-combat lib; this class prints
+# what the lib already computed. No method here issues a game command or
+# opens a file for writing.
+class UcLegReport
+  def initialize
+    @character = UberCombat::Character.new
+    @zone_table = UberCombat::ZoneTable.from_game_data
+    @picker = UberCombat::ZonePicker.new(@character, @zone_table)
+
+    # get_settings with no flex suffix: always ['setup'] only
+    # (setup_files.rb:77, "['setup', character_suffixes]"). uc_weapons and
+    # uc_spells live in <Character>-setup.yaml, never in a flex file, so
+    # this is the plain character setup, not a flex-merged settings object
+    # -- deliberately NOT get_settings(['uc']), which would additionally
+    # merge in a stale <Character>-uc.yaml left over from a previous run of
+    # the (not yet written) disk-writing component, if one exists on disk.
+    settings = get_settings
+    uc_weapons = UberCombat::LegSettings.uc_weapons(settings)
+    uc_spells = UberCombat::LegSettings.uc_spells(settings)
+    known_spell_names = UberCombat::LegSettings.known_spell_names(get_data('spells'))
+
+    @overlay_engine = UberCombat::LegOverlay.new(@character, uc_weapons,
+                                                 uc_spells: uc_spells,
+                                                 known_spell_names: known_spell_names)
+  end
+
+  def run
+    DRC.message(format('=== uc-leg: %s, %d zones loaded ===', XMLData.name, @zone_table.zones.size))
+
+    itinerary = @picker.build_itinerary
+    report_itinerary(itinerary)
+
+    all_gaps = []
+    itinerary.legs.each_with_index do |leg, index|
+      all_gaps.concat(report_leg(leg, index))
+    end
+
+    report_target_path
+    report_gap_summary(all_gaps)
+  end
+
+  private
+
+  # Verbatim from uc-zones.lic's own report_itinerary -- same itinerary, same
+  # presentation, so the two diagnostics never disagree about what the
+  # picker returned.
+  def report_itinerary(itinerary)
+    DRC.message('-- Itinerary (build_itinerary) --')
+    if itinerary.legs.empty?
+      DRC.message('  (no legs)', false)
+      return
+    end
+
+    itinerary.legs.each_with_index do |leg, index|
+      stance = leg[:stance]
+      DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
+      DRC.message(format('    zone=%-24s stance=%-12s defences=%s',
+                         leg[:zone_key], stance[:policy],
+                         @character.stance_order(stance[:policy]).join(' > ')), false)
+    end
+  end
+
+  # Returns this leg's gaps, tagged with the leg number, so the closing
+  # summary can name which leg each gap belongs to without re-deriving it.
+  def report_leg(leg, index)
+    overlay = @overlay_engine.build(leg)
+
+    DRC.message(format('-- Leg %d overlay (zone=%s) --', index + 1, leg[:zone_key]))
+    print_yaml(overlay.settings)
+    DRC.message('  Launch: ;hunting-buddy uc', false)
+    report_gaps(overlay.gaps)
+
+    overlay.gaps.map { |gap| gap.merge(leg: index + 1) }
+  end
+
+  # settings.to_yaml is the exact serialisation the (not yet written) disk
+  # writer would emit -- Overlay#settings is a plain Hash, and Ruby's own
+  # YAML dump is the only faithful way to show what "as it would be written"
+  # means for a Hash mixing Symbol and String keys (contract Q1). DRC.message
+  # takes one line at a time (it has no multi-line contract of its own,
+  # unlike Lich::Messaging.mono), so the block splits the dump itself rather
+  # than handing it a single string with embedded newlines.
+  def print_yaml(settings)
+    settings.to_yaml.each_line { |line| DRC.message(line.chomp, false) }
+    # YAML's document-end marker, and it earns its place. Without it the next
+    # line printed sits directly beneath the dump at the same indent and reads
+    # as one more YAML key -- the launch line rendered as "  Launch:" nested
+    # under "stances:". This output exists to be read against, and pasted into,
+    # a real profile file, so the end of the document must be unmistakable.
+    DRC.message('...', false)
+  end
+
+  def report_gaps(gaps)
+    if gaps.empty?
+      DRC.message('  -- Gaps: none --', false)
+      return
+    end
+
+    DRC.message('  -- Gaps: DO NOT launch this leg --', false)
+    gaps.each do |gap|
+      DRC.message(format('    %-16s reason=%-20s %s', gap[:skill], gap[:reason], gap[:detail]), false)
+    end
+  end
+
+  # The one absolute path the (not yet written) disk writer would write to.
+  # Derived at runtime through SetupFiles' own private resolution
+  # (scripts_profiles_path, to_character_filename) rather than hardcoded, so
+  # this line never drifts from contract Q9's actual answer if the
+  # game-instance-specific branch there (setup_files.rb:157-160) ever starts
+  # applying on this install. $setupfiles is the process-wide global instance
+  # every get_settings / get_data call already goes through
+  # (global_defs.rb:68).
+  def report_target_path
+    path = File.join($setupfiles.send(:scripts_profiles_path), $setupfiles.send(:to_character_filename, 'uc'))
+    DRC.message('-- Overlay file target (NOT written by this script) --')
+    DRC.message("  #{path}", false)
+  end
+
+  def report_gap_summary(all_gaps)
+    DRC.message('=== GAP SUMMARY ===')
+    if all_gaps.empty?
+      DRC.message('  No gaps. Every leg overlay above is complete.', false)
+      return
+    end
+
+    DRC.message(format('  %d GAP(S) FOUND -- DO NOT launch any leg listed below with ;hunting-buddy uc', all_gaps.size))
+    all_gaps.each do |gap|
+      DRC.message(format('    Leg %-3d %-16s reason=%-20s %s',
+                         gap[:leg], gap[:skill], gap[:reason], gap[:detail]), false)
+    end
+  end
+end
+
+UcLegReport.new.run
