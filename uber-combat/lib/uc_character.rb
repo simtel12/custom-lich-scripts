@@ -31,11 +31,16 @@ module UberCombat
     # OUTLIER_THRESHOLD decides how far below the middle counts as an outlier.
     # It is a judgement call and it can be tuned.
     #
-    # LOW_WEIGHT is not a judgement call. Every character has at least 180
-    # defensive stance points (user, game knowledge), and CT pours them
-    # greedily, so the split is 100 / 80 / 0. The second defence therefore
-    # receives 80 percent of what the first receives, and 0.8 is that ratio.
-    # Do not tune it without a reason grounded in the game.
+    # LOW_WEIGHT is the ratio the second defence actually receives. Every
+    # character has at least 180 defensive stance points, and CT pours them
+    # greedily (CT:351), so what CT produces is 100 / 80 / 0. The second
+    # defence gets 80 percent of the first, and 0.8 is that ratio.
+    #
+    # The GAME does not require that split. Any distribution of the points is
+    # legal, 100/40/40 and 80/60/40 included, and CT reaches none of them
+    # through the stance list. Only stance_override can, and it is a fixed
+    # character-wide string. So 0.8 describes how this system will really run,
+    # not a rule of the game.
     #
     # Tuning one must never move the other.
     OUTLIER_THRESHOLD = 0.8
