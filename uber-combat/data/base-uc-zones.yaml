@@ -7,7 +7,7 @@
 # accepted design in notes/uber-combat/requirements/23-loot-nav-progression.md §1
 # and the amendments recorded in notes/uber-combat/99-progress.md.
 #
-# Placement: source of truth is custom-scripts/data/base-uc-zones.yaml; mirrored
+# Placement: source of truth is custom-scripts/uber-combat/data/base-uc-zones.yaml; mirrored
 # byte-identical to lich-5/scripts/data/custom/base-uc-zones.yaml. Edit the
 # source, mirror to runtime, commit only in custom-scripts/.
 #
