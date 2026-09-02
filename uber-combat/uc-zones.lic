@@ -1,0 +1,176 @@
+# frozen_string_literal: true
+
+=begin
+  uc-zones: read-only diagnostic for the uber-combat hunting-zone picker.
+
+  Builds the current character's live UberCombat::Character and
+  UberCombat::ZoneTable, asks UberCombat::ZonePicker for its itinerary and for
+  the flat union of admissible zones over the training set, then orders that
+  flat list by travel distance from the current room. Issues no game command
+  and mutates no picker state -- rules 1 and 2 in
+  custom-scripts/uber-combat/README.md ("Rules that this code obeys").
+
+  Distance comes from a single Room#dijkstra call made from the current room
+  (map_base.rb:774, MapBase::InstanceMethods, included into Map -- and so
+  into Room < Map -- by map_dr.rb:9-11). dijkstra(destination = nil) returns
+  [previous, shortest_distances], both Hashes keyed by room id, not the Array
+  Map.find_all_nearest_by_tag hides its distances behind (map_base.rb:887-894
+  sorts by a dijkstra run it discards). One call here serves every candidate
+  zone; a per-zone call would be one Dijkstra run per zone.
+
+  Examples:
+    ;uc-zones
+=end
+
+# load (not require): edits to the uber-combat lib take effect without
+# restarting Lich. Same rationale as pwgo2.lic's load of powerwalk.rb.
+lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
+load File.join(lib_dir, 'uc_character.rb')
+load File.join(lib_dir, 'uc_zone_table.rb')
+load File.join(lib_dir, 'uc_zone_picker.rb')
+
+# Owns only presentation. All picker logic stays in the uber-combat lib; this
+# class formats what the lib already computed and adds distance, which the
+# lib has no reason to know about (spec: notes/uber-combat/33-zone-picker-spec.md).
+class UcZonesReport
+  ZONE_COL = '  %6s %8s %-24s %-9s %-12s %s'
+
+  def initialize
+    @character = UberCombat::Character.new
+    @zone_table = UberCombat::ZoneTable.from_game_data
+    @picker = UberCombat::ZonePicker.new(@character, @zone_table)
+  end
+
+  def run
+    room = Room.current
+    unless room
+      DRC.message('uc-zones: current room is unknown; cannot compute distance.')
+      return
+    end
+
+    _previous, distances = room.dijkstra
+    unless distances
+      DRC.message('uc-zones: dijkstra failed from the current room; see the error above.')
+      return
+    end
+
+    DRC.message(format('=== uc-zones: %s @ room %d ===', XMLData.name, room.id))
+    itinerary = @picker.build_itinerary
+    report_itinerary(itinerary)
+    report_candidates(distances)
+    report_unplaced(itinerary.unplaced)
+  end
+
+  private
+
+  def report_itinerary(itinerary)
+    DRC.message('-- Itinerary (build_itinerary) --')
+    if itinerary.legs.empty?
+      DRC.message('  (no legs)', false)
+      return
+    end
+
+    itinerary.legs.each_with_index do |leg, index|
+      stance = leg[:stance]
+      DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
+      DRC.message(format('    zone=%-24s stance=%-12s order_mode=%s',
+                         leg[:zone_key], stance[:policy], stance[:order_mode]), false)
+    end
+  end
+
+  # The flat candidate list is the union, over the character's training
+  # skills, of admissible_zones_for(skill) -- not the legs. A skill that
+  # never leads a leg, or lost the width-clustering tie-break for a shared
+  # leg, can still admit zones the itinerary never surfaces.
+  def skills_by_zone_key
+    index = Hash.new { |hash, key| hash[key] = [] }
+    UberCombat::Character::TRAINING_SET.each do |skill|
+      @picker.admissible_zones_for(skill).each { |zone| index[zone.key] << skill }
+    end
+    index
+  end
+
+  def report_candidates(distances)
+    rows = { ranked: [], escort: [], no_tag: [], unreachable: [] }
+    skills_by_zone_key.each do |zone_key, skills|
+      classify(@zone_table.zone(zone_key), skills, distances, rows)
+    end
+    rows[:ranked].sort_by! { |row| row[:distance] }
+
+    DRC.message('-- Candidate zones (nearest first) --')
+    print_ranked(rows[:ranked])
+    print_flagged('Escort access -- key is not a room tag', rows[:escort])
+    print_flagged('No map tag for this zone key', rows[:no_tag])
+    print_flagged('Room tag found, but every room is unreachable', rows[:unreachable])
+  end
+
+  # access: escort zones are reached by escort, not travel, and none of the
+  # 18 in the current data file share a key with any room tag -- checked
+  # first so they never fall through into the no_tag bucket for the wrong
+  # reason.
+  def classify(zone, skills, distances, rows)
+    if zone.access == 'escort'
+      rows[:escort] << describe(zone, skills)
+      return
+    end
+
+    room_ids = Map.rooms_by_tag(zone.key)
+    if room_ids.empty?
+      rows[:no_tag] << describe(zone, skills)
+      return
+    end
+
+    nearest = nearest_room(room_ids, distances)
+    if nearest.nil?
+      rows[:unreachable] << describe(zone, skills)
+    else
+      rows[:ranked] << describe(zone, skills).merge(room: nearest[0], distance: nearest[1])
+    end
+  end
+
+  def nearest_room(room_ids, distances)
+    reachable = room_ids.filter_map { |id| distances[id] && [id, distances[id]] }
+    reachable.min_by { |(_id, dist)| dist }
+  end
+
+  def describe(zone, skills)
+    { key: zone.key, band: format('%d-%d', zone.rank_min, zone.rank_max),
+      stance: @picker.stance_for(zone), skills: skills.join(', ') }
+  end
+
+  def print_ranked(rows)
+    if rows.empty?
+      DRC.message('  (none)', false)
+      return
+    end
+
+    DRC.message(format(ZONE_COL, 'DIST', 'ROOM', 'ZONE', 'BAND', 'STANCE', 'SKILLS'), false)
+    rows.each do |row|
+      DRC.message(format(ZONE_COL, format('%.1f', row[:distance]), row[:room], row[:key], row[:band],
+                         row[:stance], row[:skills]), false)
+    end
+  end
+
+  def print_flagged(label, rows)
+    return if rows.empty?
+
+    DRC.message("  -- #{label} --", false)
+    rows.each do |row|
+      DRC.message(format('  %-24s %-9s %-12s %s', row[:key], row[:band], row[:stance], row[:skills]), false)
+    end
+  end
+
+  def report_unplaced(unplaced)
+    DRC.message('-- Unplaced training skills --')
+    if unplaced.empty?
+      DRC.message('  (none)', false)
+      return
+    end
+
+    unplaced.each do |record|
+      DRC.message(format('  %-16s reason=%-20s %s', record[:skill], record[:reason], record[:detail]), false)
+    end
+  end
+end
+
+UcZonesReport.new.run
