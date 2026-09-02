@@ -17,6 +17,10 @@ module UberCombat
     def modrank(name)
       DRSkill.getmodrank(name)
     end
+
+    def mindstate(name)
+      DRSkill.getxp(name)
+    end
   end
 
   class Character
@@ -30,6 +34,17 @@ module UberCombat
     LOW_WEIGHT = 0.8
 
     STANCES = [:spread, :concentrated].freeze
+
+    # How the three defences are ordered for CT. This is a separate axis from
+    # STANCES, which decides admissibility. :spread and :concentrated order to
+    # match their own policy. :dynamic refines :spread by choosing the second
+    # slot on mindstate instead of rank, and it is only ever paired with the
+    # :spread policy (user, Wave 7).
+    ORDER_MODES = [:spread, :concentrated, :dynamic].freeze
+
+    # DRSkill.getxp reports a 0-34 mindstate. 34 is the mindlocked sentinel CT
+    # treats as "nothing more to gain" (CT:199, CT:5844).
+    MINDLOCK = 34
 
     # The 12 weapon skills, in the order the game reports them.
     WEAPON_SKILLS = [
@@ -64,6 +79,41 @@ module UberCombat
 
       effective_low = low < mid * OUTLIER_THRESHOLD ? mid : low
       (high + effective_low * LOW_WEIGHT) / 2.0
+    end
+
+    def mindstate_of(skill)
+      @skills.mindstate(skill)
+    end
+
+    def mindlocked?(skill)
+      mindstate_of(skill) == MINDLOCK
+    end
+
+    # The ordered defence list CT writes into @stances[key].
+    #
+    # CT pours the stance points in greedily: slot 1 takes up to 100, slot 2
+    # takes the remainder, slot 3 takes what is left (CT:5850-5854). Most
+    # characters hold fewer than 200 points, so slot 2 is a real allocation.
+    #
+    # The strong defence always leads. The second slot is what the mode picks:
+    # the middle defence for :concentrated (the lagging one is deliberately
+    # starved), the lagging defence for :spread, and the defence with the most
+    # room to learn for :dynamic.
+    #
+    # This order only survives when settings.strict_weapon_stance is true. With
+    # it false CT re-sorts the first two by sort_by_rate_then_rank (CT:329-335,
+    # CT:6628-6636), which sorts ascending by mindstate and would displace the
+    # strong defence from slot 1.
+    def stance_order(mode)
+      raise ArgumentError, "unknown stance order mode: #{mode.inspect}" unless ORDER_MODES.include?(mode)
+
+      strongest, *rest = DEFENSE_SKILLS.sort_by { |skill| -rank_of(skill) }
+      second = case mode
+               when :concentrated then rest.first
+               when :spread then rest.last
+               when :dynamic then rest.min_by { |skill| [mindstate_of(skill), rank_of(skill)] }
+               end
+      [strongest, second] + (rest - [second])
     end
   end
 end

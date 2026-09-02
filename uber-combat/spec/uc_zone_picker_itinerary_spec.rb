@@ -22,11 +22,11 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
 
   let(:open_zone) { UberCombat::Zone.new("anywhere", { "rank" => { "min" => 0, "max" => 1000 } }) }
 
-  def picker_with(zones, skills = {})
+  def picker_with(zones, skills = {}, options = {})
     character = UberCombat::Character.new(
       FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
     )
-    described_class.new(character, FakeZoneTable.new(zones))
+    described_class.new(character, FakeZoneTable.new(zones), **options)
   end
 
   describe "#build_legs, width-bounded clustering" do
@@ -180,13 +180,29 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
     it "records the stance policy and the weapon key the policy is written under" do
       itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
 
-      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Small Edged")
+      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Small Edged", order_mode: :dynamic)
     end
 
     it "keys a magic-led leg's stance on the highest weapon skill" do
       itinerary = picker_with(zones, "Targeted Magic" => 148, "Bow" => 30).build_itinerary
 
-      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Bow")
+      expect(itinerary.legs.first[:stance]).to eq(policy: :spread, key: "Bow", order_mode: :dynamic)
+    end
+
+    it "orders a spread leg statically when the dynamic second defence is switched off" do
+      picker = picker_with(zones, { "Small Edged" => 148 }, dynamic_second_defence: false)
+
+      expect(picker.build_itinerary.legs.first[:stance][:order_mode]).to eq(:spread)
+    end
+
+    it "never applies the dynamic second defence to a concentrated leg" do
+      # Defences of 200 give a spread pole of 180, so a floor of 190 forces
+      # the concentrated policy.
+      steep = UberCombat::Zone.new("steep", { "rank" => { "min" => 190, "max" => 210 } })
+      itinerary = picker_with([steep], "Small Edged" => 195).build_itinerary
+
+      expect(itinerary.legs.first[:stance])
+        .to eq(policy: :concentrated, key: "Small Edged", order_mode: :concentrated)
     end
 
     it "reports a skill whose rank no zone band covers" do

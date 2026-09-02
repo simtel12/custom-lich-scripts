@@ -9,9 +9,10 @@
 # modrank, which makes avg(getrank, getmodrank) read half the true value. This
 # double does not repeat that.
 class FakeSkills
-  def initialize(ranks, modifiers = {})
+  def initialize(ranks, modifiers = {}, mindstates = {})
     @ranks = ranks
     @modifiers = modifiers
+    @mindstates = mindstates
   end
 
   def rank(name)
@@ -20,5 +21,11 @@ class FakeSkills
 
   def modrank(name)
     rank(name) + @modifiers.fetch(name, 0)
+  end
+
+  # DRSkill.getxp is the 0-34 mindstate (learning rate). 34 is the mindlocked
+  # sentinel that CT treats as "nothing more to gain" (CT:199, CT:5844).
+  def mindstate(name)
+    @mindstates.fetch(name, 0)
   end
 end

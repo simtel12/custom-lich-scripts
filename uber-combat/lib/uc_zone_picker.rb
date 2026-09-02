@@ -14,9 +14,14 @@ module UberCombat
     # 30 and at 40. Not load-bearing, and not a safety margin.
     LEG_WIDTH_RANKS = 40
 
-    def initialize(character, zone_table)
+    # dynamic_second_defence makes a :spread leg pick its second defence by
+    # mindstate at each tick instead of by rank (user, Wave 7). It never applies
+    # to a :concentrated leg, whose whole point is to starve the lagging
+    # defence.
+    def initialize(character, zone_table, dynamic_second_defence: true)
       @character = character
       @zone_table = zone_table
+      @dynamic_second_defence = dynamic_second_defence
     end
 
     # The cheapest stance policy that survives the zone, or nil when neither
@@ -155,13 +160,23 @@ module UberCombat
       { skill: "Debilitation", reason: :no_carrier, detail: { rank: rank } }
     end
 
+    # The leg carries the ordering MODE, never a computed order. Under :dynamic
+    # the order changes as mindstates move, so a stored list goes stale. The
+    # enactment layer calls Character#stance_order(mode) at each tick.
+    def order_mode_for(policy)
+      return :dynamic if policy == :spread && @dynamic_second_defence
+
+      policy
+    end
+
     # Narrowest band wins a tie. It wastes the least of the leg's rank room,
     # which is consistent with the rule that there is no margin.
     def present(leg)
       zone = leg[:zone_candidates].min_by { |candidate| candidate.rank_max - candidate.rank_min }
+      policy = stance_for(zone)
       { skills: leg[:skills],
         zone_key: zone.key,
-        stance: { policy: stance_for(zone), key: stance_key(leg[:skills]) },
+        stance: { policy: policy, key: stance_key(leg[:skills]), order_mode: order_mode_for(policy) },
         min_mana: nil }
     end
   end
