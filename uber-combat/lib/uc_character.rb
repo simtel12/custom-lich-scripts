@@ -92,7 +92,7 @@ module UberCombat
     # The ordered defence list CT writes into @stances[key].
     #
     # CT pours the stance points in greedily: slot 1 takes up to 100, slot 2
-    # takes the remainder, slot 3 takes what is left (CT:5850-5854). Most
+    # takes the remainder, slot 3 takes what is left (CT:350-354). Most
     # characters hold fewer than 200 points, so slot 2 is a real allocation.
     #
     # The strong defence always leads. The second slot is what the mode picks:

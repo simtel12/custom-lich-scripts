@@ -4,7 +4,7 @@
 #
 # CT pours the character's stance points into the list greedily: slot 1 takes up
 # to 100, slot 2 takes the remainder, slot 3 takes what is left
-# (combat-trainer.lic:5850-5854, the priority.each loop). Most characters hold
+# (combat-trainer.lic:350-354, the priority.each loop). Most characters hold
 # fewer than 200 points, so slot 2 is a real allocation and the order is
 # load-bearing.
 RSpec.describe UberCombat::Character, "stance ordering" do
