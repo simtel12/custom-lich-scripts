@@ -88,8 +88,20 @@ class ProbeWorld
   # Flags.add compiles a String into a case-insensitive REGEXP, not a
   # literal substring (events.rb:19). Keep these free of regex metacharacters
   # or escape them.
+  # This list is OPEN, not closed. Every refusal a run discovers belongs
+  # here, and until one is added it produces blocked_silent, which is the
+  # safe direction. Two have been added from real runs so far, both found by
+  # watching go2 grind against them:
+  #   'bars your way'   -- Baearholt's farmhand
+  #   'air shimmers'    -- the barrier into Barana's Shipyard lumber stacks,
+  #                        which cost three full stall timeouts before it was
+  #                        recognised. Lich's move() does not know this one
+  #                        either, so each try burned the whole 10 second
+  #                        giveup window ("no recognized response").
   BLOCKING_LINES = [
     'bars your way',
+    'The air shimmers in front of you',
+    'invisible force is holding you back',
     'You may not pass',
     "Sorry, you aren't allowed to enter here",
     'prevents you from entering',
@@ -107,7 +119,10 @@ class ProbeWorld
 
   # How often the deadline watchdog wakes, and how long it waits for the
   # blocked call to notice. See #walk_to for why a thread is needed at all.
-  WATCHDOG_TICK = 2
+  # Once a second, not every two: the restart counter below reads an edge on
+  # a global that can be true for as little as go2's own half-second pause on
+  # its first restart (go2.lic:2152-2157). A cheaper tick misses more edges.
+  WATCHDOG_TICK = 1
   WATCHDOG_JOIN = 5
 
   # THE EARLY KILL, and it is the difference between a usable probe and an
@@ -136,6 +151,37 @@ class ProbeWorld
   # `blocked`, which is real evidence, and never `timeout`, which is the
   # probe admitting it stopped watching.
   BLOCKED_GRACE = 20
+
+  # THE GENERAL CASE, because BLOCKING_LINES will never be complete. Matching
+  # known refusal strings is whack-a-mole: the shipyard barrier was not in the
+  # list, so nothing fired and the probe fell through to walk_to's 90 second
+  # stall timer, three times over, while a ship's rat walked up.
+  #
+  # AN EARLIER VERSION COUNTED TIME WITHOUT A ROOM CHANGE, AND THAT WAS WRONG
+  # (user). Standing still is not the same as being stuck. A ferry, a paid
+  # passage, an escort leg -- all of them hold a character in one room while
+  # travel is proceeding exactly as it should, and a 45 second stall rule cut
+  # those short.
+  #
+  # COUNT go2's OWN RESTARTS INSTEAD. go2 restarts only when a movement step
+  # FAILED, so the count rises for refusals and stays flat through every
+  # legitimate wait, which is precisely the distinction the stall clock could
+  # not draw. `$go2_restart` is a process-wide global (go2.lic:2143), set at
+  # each failure and cleared at :2305, and go2 sleeps 5 s inside that window
+  # on every restart after the first (:2159-2163), so a once-a-second poll
+  # sees the edge. The very first restart has no sleep and can be missed;
+  # that only shifts the effective threshold by one, which is why this is set
+  # generously rather than tight.
+  #
+  # Six is deliberately loose. A ferry that fails a move or two while the
+  # gangplank is still up must not be cut off. It still bounds the shipyard
+  # case at about a minute instead of 270 seconds.
+  #
+  # Like the blocked kill, this does NOT set timed_out. The verdict becomes
+  # blocked_silent, which is the honest answer: something stopped us and the
+  # probe did not recognise what. Those records are the queue of lines to add
+  # to BLOCKING_LINES.
+  MAX_GO2_RESTARTS = 6
 
   attr_reader :attempts, :abort_detail
 
@@ -199,6 +245,29 @@ class ProbeWorld
     Time.now
   end
 
+  # Printed before every walk. An attempt can run the best part of a minute
+  # and ends with go2 being killed, so without this the operator watches a
+  # silent pause and cannot tell "moving on to a new zone" from "wedged on
+  # the same one again". The room counter matters for the same reason: it
+  # says whether this is a second entrance to the zone just refused, or a
+  # fresh zone entirely.
+  #
+  # The band and premium flag ride along because they are what makes a
+  # result interesting while it is happening. A known-premium zone coming up
+  # is a control check, and its verdict is worth watching for.
+  def announce(zone, room_id, index, count)
+    DRC.message(format('-- [%d/%d] %s  room %d (%d of %d)  band %s-%s  premium=%s',
+                       @attempts + 1, @budget, zone.key, room_id, index, count,
+                       zone.rank_min, zone.rank_max, zone.premium.inspect))
+  end
+
+  # Both names, because dr-scripts has two: `escort` and `bescort`
+  # (dr-scripts/bescort.lic). walk_to tests exactly this pair before deciding
+  # its own stall timer means anything (common-travel.rb:253-255).
+  def escorting?
+    Script.running?('escort') || Script.running?('bescort')
+  end
+
   # DRCT.walk_to BLOCKS for the whole trip: its polling loop
   # (common-travel.rb:227-259) runs on this thread. So the caller cannot
   # time itself out, and the spec's original "wrap each walk_to in a
@@ -227,15 +296,44 @@ class ProbeWorld
     timed_out = false
 
     watchdog = Thread.new do
+      clock = Time.now
       blocked_at = nil
+      restarts = 0
+      was_restarting = false
+
       until done
+        if escorting?
+          # SOMEONE ELSE IS DRIVING. An escort moves the character on its own
+          # schedule and go2 is not in charge, so none of these signals mean
+          # what they usually mean. walk_to holds off for the same reason
+          # (common-travel.rb:253-255). The deadline clock is pushed forward
+          # rather than merely ignored, so an escort leg cannot consume the
+          # budget the walk itself still needs afterwards.
+          clock = Time.now
+          blocked_at = nil
+          restarts = 0
+          sleep WATCHDOG_TICK
+          next
+        end
+
+        # Count the false-to-true edges of go2's own restart flag. See
+        # MAX_GO2_RESTARTS for why this and not a clock.
+        restarting = $go2_restart ? true : false
+        restarts += 1 if restarting && !was_restarting
+        was_restarting = restarting
+
         blocked_at ||= Time.now if Flags[BLOCKED_FLAG]
-        if Time.now - started > deadline
+
+        if Time.now - clock > deadline
           timed_out = true
           kill_script('go2')
         elsif blocked_at && Time.now - blocked_at > BLOCKED_GRACE
           # Evidence in hand. Kill WITHOUT setting timed_out, so the verdict
           # stays `blocked`. See BLOCKED_GRACE above.
+          kill_script('go2')
+        elsif restarts >= MAX_GO2_RESTARTS
+          # go2 is failing moves, not waiting. Also no timed_out, so this
+          # reads as blocked_silent. See MAX_GO2_RESTARTS above.
           kill_script('go2')
         end
         sleep WATCHDOG_TICK

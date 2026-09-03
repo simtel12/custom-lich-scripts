@@ -313,6 +313,9 @@ module UberCombat
     #   world.current_room_id            -> Integer, or nil when position is lost
     #   world.distances_from(room_id)    -> Hash{room_id => seconds}, or nil on failure
     #   world.rooms_for_tag(key)         -> Array<Integer>
+    #   world.announce(zone, room_id, index, count) -> nil, called once before
+    #                                    every walk_to. Presentation only; the
+    #                                    core never reads anything back from it.
     #   world.walk_to(room_id, deadline) -> [arrived_boolean, timed_out_boolean, elapsed_seconds]
     #   world.reset_capture              -> nil, clears the blocking-line capture
     #   world.blocking_line              -> String or nil
@@ -469,14 +472,22 @@ module UberCombat
         engaged = false
         elapsed = nil
 
-        rooms.each do |room_id, distance|
+        signature = nil
+
+        rooms.each_with_index do |(room_id, distance), index|
+          # Announced BEFORE the walk, never after. An attempt can take the
+          # best part of a minute and ends with go2 being killed, so without
+          # a line first the operator watches a silent pause and cannot tell
+          # a new zone from the same one wedged again.
+          @world.announce(zone, room_id, index + 1, rooms.size)
           @world.reset_capture
           arrived, timed_out, elapsed = @world.walk_to(room_id, Probe.deadline_for(distance))
           tried << room_id
           room = room_id
           line = @world.blocking_line
           engaged = @world.engaged?
-          verdict = Probe.verdict(arrived: arrived, current_room_id: @world.current_room_id,
+          here = @world.current_room_id
+          verdict = Probe.verdict(arrived: arrived, current_room_id: here,
                                   zone_rooms: zone_rooms, blocking_line: line, timed_out: timed_out)
 
           break if verdict == :reached
@@ -487,6 +498,28 @@ module UberCombat
           # only place inside one zone's attempt that ever gets a chance to
           # notice an abort before all MAX_ROOMS_PER_ZONE rooms are burned.
           break if @world.abort_reason
+
+          # SAME PLACE, SAME REFUSAL: it is one barrier, not several, and the
+          # remaining rooms are behind it too. Trying three rooms exists to
+          # find a SECOND ENTRANCE, so it is only worth paying for while the
+          # attempts are actually landing somewhere different.
+          #
+          # This is not hypothetical. The zone `rats_lumber` has three tagged
+          # rooms (13171, 13172, 13173) and every route to all three goes
+          # through one step, `go stacks of lumber` out of room 6054. The
+          # probe paid the full stall timeout three times over for a single
+          # blocked doorway, and the character stood there long enough to be
+          # found by a ship's rat.
+          #
+          # The signature carries the LINE as well as the room, so two
+          # genuinely different barriers that happen to leave the character
+          # in the same place still earn their own attempts. A nil line
+          # compares equal to a nil line, which is deliberate: an unrecognised
+          # refusal repeating in one spot is exactly the case this catches.
+          signature_now = [here, line]
+          break if signature_now == signature
+
+          signature = signature_now
         end
 
         record_for(zone.key, verdict, room: room, rooms_tried: tried, line: line,

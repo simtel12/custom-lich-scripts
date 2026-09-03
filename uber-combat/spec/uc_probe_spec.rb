@@ -12,9 +12,10 @@
 # defined inside a block.
 class FakeWorld
   attr_accessor :current_room_id, :distances, :abort_reason, :now
-  attr_reader :walk_calls
+  attr_reader :walk_calls, :announcements
 
   def initialize
+    @announcements = []
     @room_tags = {}
     @walk_scripts = {}
     @blocking_line = nil
@@ -39,6 +40,13 @@ class FakeWorld
 
   def rooms_for_tag(key)
     @room_tags.fetch(key, [])
+  end
+
+  # Presentation only, so it is recorded rather than acted on -- but it IS
+  # recorded, because "announced before every walk" is the whole point of it
+  # and a silent no-op would let that regress unnoticed.
+  def announce(zone, room_id, index, count)
+    @announcements << [zone.key, room_id, index, count]
   end
 
   def distances_from(_room_id)
@@ -480,13 +488,65 @@ RSpec.describe UberCombat::Probe do
       expect(outcome.visited).to eq(1)
     end
 
+    # rats_lumber has three tagged rooms and every route to all three runs
+    # through one step out of room 6054. The probe paid the full stall
+    # timeout three times for a single doorway, while a ship's rat walked up.
+    it "stops after a second attempt that ends in the same room with the same refusal" do
+      world = FakeWorld.new
+      world.current_room_id = 6054
+      world.distances = { 13171 => 1.0, 13172 => 2.0, 13173 => 3.0 }
+      z = zone("rats_lumber", min: 0, max: 30)
+      world.tag("rats_lumber", [13171, 13172, 13173])
+
+      outcome = session([z], world).run
+      entry = outcome.records["rats_lumber"]["reachability"]["basic"]
+
+      expect(world.walk_calls.map(&:first)).to eq([13171, 13172])
+      expect(entry["rooms_tried"]).to eq([13171, 13172])
+    end
+
+    it "announces every room it is about to try, naming the zone" do
+      world = FakeWorld.new
+      world.current_room_id = 100
+      world.distances = { 201 => 10.0, 202 => 20.0 }
+      z = zone("rats_lumber", min: 0, max: 30)
+      world.tag("rats_lumber", [201, 202])
+      world.script_walk(201, [false, false, 1.0, "bars your way", false, 301])
+      world.script_walk(202, [false, false, 1.0, "bars your way", false, 302])
+
+      session([z], world).run
+
+      expect(world.announcements).to eq([["rats_lumber", 201, 1, 2], ["rats_lumber", 202, 2, 2]])
+    end
+
+    # An announcement is a promise that a walk follows. Zones settled without
+    # moving must stay silent, or the operator reads travel that never happens.
+    it "announces nothing for a zone it never walks to" do
+      world = FakeWorld.new
+      world.current_room_id = 100
+      world.distances = {}
+      escort = zone("hara_run", access: "escort")
+      unreachable = zone("retan_hara", min: 0, max: 30)
+      world.tag("retan_hara", [11411])
+
+      session([escort, unreachable], world).run
+
+      expect(world.announcements).to be_empty
+    end
+
     it "tries every room up to MAX_ROOMS_PER_ZONE before recording a blocked verdict" do
       world = FakeWorld.new
       world.current_room_id = 100
       world.distances = { 201 => 10.0, 202 => 20.0, 203 => 30.0, 204 => 40.0 }
       z = zone("z1")
       world.tag("z1", [201, 202, 203, 204])
-      [201, 202, 203].each { |room| world.script_walk(room, [false, false, 1.0, "bars your way", false, 100]) }
+      # Each failed attempt leaves the character somewhere DIFFERENT, so the
+      # same-barrier rule above never fires and the room cap is what stops
+      # this -- which is the thing this example is guarding. Four rooms are
+      # tagged and only three may be tried.
+      [201, 202, 203].each_with_index do |room, index|
+        world.script_walk(room, [false, false, 1.0, "bars your way", false, 300 + index])
+      end
 
       outcome = session([z], world).run
       entry = outcome.records["z1"]["reachability"]["basic"]
