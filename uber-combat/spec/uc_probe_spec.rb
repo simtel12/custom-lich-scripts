@@ -87,8 +87,11 @@ RSpec.describe UberCombat::Probe do
   # min/max default to nil, which is a zone with NO closed band -- the shape
   # most of these examples want, and a meaningful case in its own right once
   # a defence is supplied (see the band filter examples below).
-  def zone(key, access: "plain", min: nil, max: nil)
-    UberCombat::Zone.new(key, { "access" => access, "rank" => { "min" => min, "max" => max } })
+  # premium defaults to nil, which is "nobody has checked yet" -- the state
+  # the probe exists to change, and so the state most of these examples want.
+  def zone(key, access: "plain", min: nil, max: nil, premium: nil)
+    UberCombat::Zone.new(key, { "access" => access, "premium" => premium,
+                                "rank" => { "min" => min, "max" => max } })
   end
 
   describe ".partition" do
@@ -124,6 +127,46 @@ RSpec.describe UberCombat::Probe do
       expect(partition.escort).to eq([escort])
       expect(partition.no_tag).to eq([untagged])
       expect(partition.probeable).to eq([probeable])
+    end
+
+    # The probe exists to turn `premium: null` into an answer. A zone that
+    # already has one has no signal left to give, and 30 of the 54 zones
+    # left after the first live run were exactly that.
+    context "with premium already known" do
+      it "skips a zone already marked premium" do
+        known = zone("undead_gerbils", min: 23, max: 27, premium: true)
+        partition = described_class.partition([known], ->(_key) { [8441] }, defence: 68)
+
+        expect(partition.answered).to eq([known])
+        expect(partition.probeable).to be_empty
+      end
+
+      it "skips a zone already marked not premium" do
+        known = zone("louts", min: 0, max: 35, premium: false)
+        partition = described_class.partition([known], ->(_key) { [690] }, defence: 68)
+
+        expect(partition.answered).to eq([known])
+        expect(partition.probeable).to be_empty
+      end
+
+      it "still probes a zone whose premium is unknown" do
+        unknown = zone("revenant_conscripts", min: 0, max: 35)
+        partition = described_class.partition([unknown], ->(_key) { [706] }, defence: 68)
+
+        expect(partition.probeable).to eq([unknown])
+        expect(partition.answered).to be_empty
+      end
+
+      # answered outranks out_of_band: knowing the answer settles the zone
+      # whatever the character's defences are, and filing it as merely
+      # deferred would imply a stronger character should come back for it.
+      it "prefers answered over out_of_band when both apply" do
+        known = zone("bone_wyverns", min: 1500, max: 1750, premium: true)
+        partition = described_class.partition([known], ->(_key) { [900] }, defence: 68)
+
+        expect(partition.answered).to eq([known])
+        expect(partition.out_of_band).to be_empty
+      end
     end
 
     # The band filter. The first live plan run queued a rank 200-250 zone
@@ -404,6 +447,21 @@ RSpec.describe UberCombat::Probe do
     # absence of an answer, so recording one would settle the zone forever:
     # uc-probe.lic subtracts every recorded zone from the next run's
     # candidates, and a stronger character would then never reconsider it.
+    it "skips an already-answered zone WITHOUT recording it or walking to it" do
+      world = FakeWorld.new
+      world.current_room_id = 100
+      world.distances = { 690 => 1.0 }
+      known = zone("louts", min: 0, max: 35, premium: false)
+      world.tag("louts", [690])
+
+      outcome = session([known], world).run
+
+      expect(outcome.records).to be_empty
+      expect(outcome.answered).to eq(1)
+      expect(world.walk_calls).to be_empty
+      expect(world.announcements).to be_empty
+    end
+
     it "defers an out-of-band zone WITHOUT recording it, so a later run can retry it" do
       world = FakeWorld.new
       world.current_room_id = 100

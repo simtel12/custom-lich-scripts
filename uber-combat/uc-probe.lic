@@ -252,13 +252,14 @@ class ProbeWorld
   # says whether this is a second entrance to the zone just refused, or a
   # fresh zone entirely.
   #
-  # The band and premium flag ride along because they are what makes a
-  # result interesting while it is happening. A known-premium zone coming up
-  # is a control check, and its verdict is worth watching for.
+  # The band rides along because it is the one zone fact that still varies
+  # here and it lets the band filter be checked by eye. The premium flag
+  # used to be printed too and is not any more: every zone a run reaches is
+  # one with premium unset, so the column said `nil` on every line.
   def announce(zone, room_id, index, count)
-    DRC.message(format('-- [%d/%d] %s  room %d (%d of %d)  band %s-%s  premium=%s',
+    DRC.message(format('-- [%d/%d] %s  room %d (%d of %d)  band %s-%s',
                        @attempts + 1, @budget, zone.key, room_id, index, count,
-                       zone.rank_min, zone.rank_max, zone.premium.inspect))
+                       zone.rank_min, zone.rank_max))
   end
 
   # Both names, because dr-scripts has two: `escort` and `bescort`
@@ -591,18 +592,15 @@ class UcProbe
     DRC.message(format('  probeable      %4d', partition.probeable.size), false)
     DRC.message(format('  escort         %4d  (reached by escort, never walked)', partition.escort.size), false)
     DRC.message(format('  no map tag     %4d  (nothing to walk to)', partition.no_tag.size), false)
+    DRC.message(format('  already known  %4d  (premium answered, nothing left to learn)',
+                       partition.answered.size), false)
     DRC.message(format('  out of band    %4d  (deferred: defences %.1f cannot survive there)',
                        partition.out_of_band.size, @defence), false)
-    DRC.message('  Deferred zones are NOT recorded. They come back when the character grows.', false)
-    DRC.message('  The picker would refuse them on rank anyway, so their premium flag', false)
-    DRC.message('  cannot change any decision this character makes.', false)
-
-    unknown = partition.probeable.count(&:premium_unknown?)
-    known = partition.probeable.count { |zone| zone.premium == true }
-    DRC.message(format('  of the probeable: %d unresolved (the job), %d known premium (the control)',
-                       unknown, known), false)
-    DRC.message('  A known-premium zone that comes back reached means one of the two', false)
-    DRC.message('  sources is wrong. Stop and investigate rather than merging.', false)
+    DRC.message('  Neither is recorded, and the two mean opposite things: an answered zone', false)
+    DRC.message('  has nothing left to give, an out-of-band one has something we cannot go', false)
+    DRC.message('  and get. Only the second is a gap, and it closes as the character grows.', false)
+    DRC.message(format('  probeable is therefore exactly the %d zones with premium still unset.',
+                       partition.probeable.size), false)
   end
 
   # The same nearest-first ordering the run itself would follow, printed
@@ -634,7 +632,8 @@ class UcProbe
       nearest = world.rooms_for_tag(zone.key)
                      .filter_map { |id| distances[id] && [id, distances[id]] }
                      .min_by { |(_id, dist)| dist }
-      nearest && { key: zone.key, room: nearest[0], distance: nearest[1], premium: zone.premium,
+      nearest && { key: zone.key, room: nearest[0], distance: nearest[1],
+                   rooms: world.rooms_for_tag(zone.key).size,
                    band: format('%s-%s', zone.rank_min, zone.rank_max) }
     end
 
@@ -643,12 +642,15 @@ class UcProbe
       return
     end
 
-    # The band is printed so the filter can be checked by eye. Every row here
-    # must have a floor at or below the defences shown in the banner.
-    DRC.message(format('  %8s %8s %-30s %-10s %s', 'DIST', 'ROOM', 'ZONE', 'BAND', 'PREMIUM'), false)
+    # The band is printed so the filter can be checked by eye: every row here
+    # must have a floor at or below the defences shown in the banner. ROOMS
+    # replaced a premium column that now reads `nil` on every line, and it
+    # earns the space -- it is the number of entrances a blocked verdict has
+    # to get through, so it predicts what a refusal will cost.
+    DRC.message(format('  %8s %8s %-30s %-10s %s', 'DIST', 'ROOM', 'ZONE', 'BAND', 'ROOMS'), false)
     rows.sort_by { |row| row[:distance] }.first(15).each do |row|
-      DRC.message(format('  %8.1f %8d %-30s %-10s %s',
-                         row[:distance], row[:room], row[:key], row[:band], row[:premium].inspect), false)
+      DRC.message(format('  %8.1f %8d %-30s %-10s %d',
+                         row[:distance], row[:room], row[:key], row[:band], row[:rooms]), false)
     end
     DRC.message(format('  ... %d more', rows.size - 15), false) if rows.size > 15
   end
@@ -657,6 +659,7 @@ class UcProbe
     DRC.message('-- Run outcome --')
     DRC.message(format('  zones settled this run: %d', outcome.records.size), false)
     DRC.message(format('  travel attempts spent:  %d', world.attempts), false)
+    DRC.message(format('  skipped, already known: %d', outcome.answered), false)
     DRC.message(format('  deferred, out of band:  %d', outcome.deferred), false)
     if outcome.aborted
       detail = world.abort_detail ? " (#{world.abort_detail})" : ''

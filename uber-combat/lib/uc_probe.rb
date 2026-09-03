@@ -76,12 +76,15 @@ module UberCombat
     #     for the same reason).
     #   no_tag  -- a plain zone whose key is not a map tag at all. There is
     #     nothing to Map.rooms_by_tag its way to.
+    #   answered -- premium is already known, true or false. Nothing to find
+    #     out, so nothing to walk to. Like out_of_band these are DEFERRED and
+    #     never recorded: the probe observed nothing about them.
     #   out_of_band -- this character cannot survive standing there. NOT a
-    #     fact about the zone, unlike the two above, so these are DEFERRED
-    #     rather than settled: the caller must not record them, and a later
-    #     run by a stronger character reconsiders them. See .partition.
+    #     fact about the zone, unlike escort and no_tag, so these are
+    #     DEFERRED rather than settled: the caller must not record them, and
+    #     a later run by a stronger character reconsiders them.
     # probeable is everything else: a real candidate for .rank and a walk.
-    Partition = Struct.new(:probeable, :escort, :no_tag, :out_of_band, keyword_init: true)
+    Partition = Struct.new(:probeable, :escort, :no_tag, :answered, :out_of_band, keyword_init: true)
 
     # One iteration's answer to "what does the character walk to next."
     # next_zone/rooms are nil together when nothing priced is reachable.
@@ -97,6 +100,21 @@ module UberCombat
     #   a hardcoded Map.rooms_by_tag call, so this stays testable with a
     #   plain Hash-backed double and no Lich runtime.
     # defence: the character's defensive metric, or nil for no band filter.
+    #
+    # WHY A ZONE WITH A KNOWN premium IS NOT PROBED (user, after two live
+    # runs). The probe exists to turn `premium: null` into an answer. A zone
+    # that already has one, true or false, has no signal left to give, and
+    # walking to it spends the travel budget on a result nobody will act on.
+    # Of the 54 zones left in scope after the first run, 30 were exactly this
+    # -- confirmations of a flag already set.
+    #
+    # This retires the automatic calibration control, and that is a real
+    # trade rather than a free win: probing a known-premium zone was how a
+    # wrong harvest would have announced itself. It is an acceptable trade
+    # because the control ALREADY RAN AND PASSED -- undead_gerbils, marked
+    # premium, came back blocked on a basic account with the guard's line
+    # captured. To run it again, clear that zone's `premium` back to null
+    # deliberately; nothing here will do it by accident.
     #
     # WHY THERE IS A BAND FILTER AT ALL. The probe orders by DISTANCE, and
     # distance has nothing to do with danger: the first real plan run put a
@@ -120,6 +138,7 @@ module UberCombat
       probeable = []
       escort = []
       no_tag = []
+      answered = []
       out_of_band = []
 
       zones.each do |zone|
@@ -127,6 +146,8 @@ module UberCombat
           escort << zone
         elsif rooms_for_tag.call(zone.key).empty?
           no_tag << zone
+        elsif !zone.premium_unknown?
+          answered << zone
         elsif !survivable?(zone, defence)
           out_of_band << zone
         else
@@ -134,7 +155,8 @@ module UberCombat
         end
       end
 
-      Partition.new(probeable: probeable, escort: escort, no_tag: no_tag, out_of_band: out_of_band)
+      Partition.new(probeable: probeable, escort: escort, no_tag: no_tag,
+                    answered: answered, out_of_band: out_of_band)
     end
 
     # A nil defence disables the filter entirely, which is what a caller with
@@ -340,7 +362,11 @@ module UberCombat
       #   COUNT and not records -- a deferred zone has no answer, and writing
       #   one would make it look settled and keep a stronger character from
       #   ever reconsidering it (see Probe.partition).
-      Outcome = Struct.new(:records, :aborted, :visited, :deferred, keyword_init: true)
+      # answered: how many zones were skipped because premium is already
+      #   known. Counted SEPARATELY from deferred because the two mean
+      #   opposite things -- "nothing left to learn" against "could not go
+      #   and learn it" -- and only the second is a gap in the data.
+      Outcome = Struct.new(:records, :aborted, :visited, :deferred, :answered, keyword_init: true)
 
       # zones: Array<Zone>, the full candidate set -- escort and untagged
       #   zones included. Partitioning them is this class's job (via
@@ -379,12 +405,12 @@ module UberCombat
           records[zone.key] = record_for(zone.key, "no_tag")
         end
 
-        # partition.out_of_band is pointedly NOT recorded here. Those zones
-        # have no answer -- the character simply cannot go and find out --
-        # and a record would settle them permanently, because the caller
-        # subtracts everything already recorded from the next run's
-        # candidates. They must come back around when the character is
-        # stronger.
+        # partition.out_of_band and partition.answered are pointedly NOT
+        # recorded here. Neither was observed: one the character cannot reach
+        # safely, the other nobody needs to. A record would claim an
+        # observation that never happened, and would also settle the zone
+        # permanently, because the caller subtracts everything already
+        # recorded from the next run's candidates.
 
         probeable = partition.probeable
         aborted = nil
@@ -441,7 +467,7 @@ module UberCombat
         aborted ||= @world.abort_reason
 
         Outcome.new(records: records, aborted: aborted, visited: @visited,
-                    deferred: partition.out_of_band.size)
+                    deferred: partition.out_of_band.size, answered: partition.answered.size)
       end
 
       private
