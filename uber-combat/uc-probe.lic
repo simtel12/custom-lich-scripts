@@ -1,0 +1,725 @@
+# frozen_string_literal: true
+
+=begin
+  uc-probe: in-game reachability probe for the uber-combat hunting-zone table.
+
+  Walks a live character at hunting zones in expanding order, nearest first,
+  and records which ones it cannot reach. The point is the premium residue:
+  190 of the 363 zones in base-uc-zones.yaml still carry premium: null, the
+  gate falls OPEN on an unknown (uc_zone_picker.rb#premium_locked?), and no
+  offline source can close them. Elanthipedia's {{Critter}} infobox describes
+  a CREATURE, and premium access gates ROOMS, so a wiki "not premium" rules
+  out the creature and never the rooms. Walking there is the only evidence
+  that settles it.
+
+  Spec: notes/uber-combat/37-zone-probe-spec.md, INCLUDING its 2026-09-03
+  amendments A1 to A5 at the top of that file. Runtime facts this script
+  depends on are cited in notes/uber-combat/39-probe-runtime-facts.md.
+
+  ALL of the decision logic lives in lib/uc_probe.rb and is pure and tested.
+  This file is the world adapter and the presentation, nothing more -- the
+  same split uc-leg.lic keeps against LegOverlay/LegWriter.
+
+    ;uc-probe             -- PLAN ONLY. Read-only. Walks nowhere. Prints the
+                             partition census and the order it would take.
+    ;uc-probe run <n>     -- probe until <n> travel attempts are spent.
+    ;uc-probe report      -- print everything recorded so far and write the
+                             results file the merge tool reads.
+
+  THE DEFAULT MODE WALKS NOWHERE ON PURPOSE. Every other script in this
+  project shipped read-only first, and that discipline caught two real bugs
+  before anything could act on them. A run is also long: 331 zones at real
+  travel speed is hours of unattended walking into hostile territory, so the
+  budget argument to `run` is REQUIRED and there is deliberately no way to
+  ask for the whole table in one command.
+
+  WHY THE BUDGET IS COUNTED IN TRAVEL ATTEMPTS, not zones: a reached zone
+  costs one attempt and a blocked one costs up to MAX_ROOMS_PER_ZONE, so
+  attempts are what actually consume the wall clock. Counting zones would
+  let `run 10` mean anything from 10 to 30 walks.
+
+  Results accumulate in CharSettings across runs and are written out as YAML
+  for notes/uber-combat/tools/merge-probe-results.rb to merge. THIS SCRIPT
+  NEVER WRITES base-uc-zones.yaml, and never writes premium: anywhere. A
+  probe result is reachability evidence, not a premium verdict -- section 6
+  of the spec lists twelve reasons a zone can be unreachable and the probe
+  can tell almost none of them apart.
+
+  Examples:
+    ;uc-probe
+    ;uc-probe run 10
+    ;uc-probe report
+=end
+
+# load (not require): edits to the uber-combat lib take effect without
+# restarting Lich. Same rationale as uc-zones.lic's load of its own libs.
+lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
+load File.join(lib_dir, 'uc_character.rb')
+load File.join(lib_dir, 'uc_zone_table.rb')
+load File.join(lib_dir, 'uc_probe.rb')
+
+require 'yaml'
+require 'time'
+
+# The world contract UberCombat::Probe::Session is built against (see that
+# class's header comment). Every Map, Room, DRCT, Flags and DRStats call in
+# this script lives in here, so the decision core stays pure and the whole
+# loop is driven by a plain double in spec/uc_probe_spec.rb.
+class ProbeWorld
+  # Our own Flags key. It must not collide with the two DRCT.walk_to
+  # registers and DELETES in its own ensure block -- 'travel-closed-shop'
+  # and 'travel-engaged' (common-travel.rb:223-224, 259-261). A collision
+  # would have walk_to quietly remove our matcher mid-run and every later
+  # zone would report blocked_silent.
+  BLOCKED_FLAG = 'uc-probe-blocked'
+
+  # Read back after each attempt rather than registered by us: walk_to owns
+  # this key's lifetime, so we only ever LOOK at it, between the add and the
+  # delete. An engaged attempt is weaker evidence and the record says so.
+  ENGAGED_FLAG = 'travel-engaged'
+
+  # The last five are lifted verbatim from Lich's own move() failure regexes
+  # (global_defs.rb:628 and :633), so the probe recognises everything move
+  # recognises. 'bars your way' is added because the transcript that started
+  # this work proved move does NOT recognise it (spec section 0.4) -- the
+  # character was refused, move saw nothing, and go2 reported a successful
+  # travel time.
+  #
+  # Flags.add compiles a String into a case-insensitive REGEXP, not a
+  # literal substring (events.rb:19). Keep these free of regex metacharacters
+  # or escape them.
+  BLOCKING_LINES = [
+    'bars your way',
+    'You may not pass',
+    "Sorry, you aren't allowed to enter here",
+    'prevents you from entering',
+    'Please leave promptly',
+    'become impassable'
+  ].freeze
+
+  # Conservative because THE PROBE NEVER FIGHTS. It walks in, looks at the
+  # room, and leaves. Any health loss at all therefore means something
+  # attacked the character while it stood there, which is reason enough to
+  # stop an unattended run. These are starting values and they are the first
+  # thing to tune after a real run.
+  HEALTH_FLOOR = 75
+  SPIRIT_FLOOR = 50
+
+  # How often the deadline watchdog wakes, and how long it waits for the
+  # blocked call to notice. See #walk_to for why a thread is needed at all.
+  WATCHDOG_TICK = 2
+  WATCHDOG_JOIN = 5
+
+  # THE EARLY KILL, and it is the difference between a usable probe and an
+  # unusable one. On the first live run undead_gerbils cost about 190 seconds
+  # of go2 restarting into the same farmhand -- 90 s per room, twice, ended
+  # each time by walk_to's own stall watchdog (common-travel.rb:245-252)
+  # rather than by anything the probe did:
+  #
+  #   [go2]>climb stile
+  #   A worried-looking farmhand bars your way, ...
+  #   [go2]>north     You can't go there.    [go2: move: failed]
+  #   [go2]>south     You can't go there.    [go2: move: failed]
+  #   [go2: restarting script...]            <- and again, and again
+  #
+  # The moment that line is captured, THE PROBE ALREADY HAS WHAT IT CAME FOR.
+  # A blocked verdict needs the guard's words and nothing else, so every
+  # further restart adds spam and risk and no evidence at all.
+  #
+  # The grace exists because a captured line is not always final: go2 may yet
+  # route around the refusal by another path. Roughly three of go2's restart
+  # cycles is enough to see whether it is making progress. Measured against
+  # that run, a room ends about 22 s after the guard first speaks instead of
+  # 90, so the zone costs roughly 50 s rather than 190.
+  #
+  # This kill deliberately does NOT set timed_out. The verdict must be
+  # `blocked`, which is real evidence, and never `timeout`, which is the
+  # probe admitting it stopped watching.
+  BLOCKED_GRACE = 20
+
+  attr_reader :attempts, :abort_detail
+
+  def initialize(budget)
+    @budget = budget
+    @attempts = 0
+    @abort_detail = nil
+    # Map.rooms_by_tag returns a fresh copy on every call (map_base.rb:550)
+    # and Probe.rank asks for every probeable zone on every iteration. Over
+    # a 331-zone run that is tens of thousands of array copies for data that
+    # cannot change while the script runs.
+    @rooms_cache = {}
+    Flags.add(BLOCKED_FLAG, *BLOCKING_LINES)
+  end
+
+  def cleanup
+    Flags.delete(BLOCKED_FLAG)
+  end
+
+  def rooms_for_tag(key)
+    @rooms_cache[key] ||= Map.rooms_by_tag(key)
+  end
+
+  def current_room_id
+    Room.current&.id
+  end
+
+  # Room#dijkstra returns [previous, shortest_distances], both Hashes keyed
+  # by room id, weighted by timeto SECONDS rather than hop count
+  # (map_base.rb:774, :814-820). One call prices every candidate room at
+  # once, which is why Session calls this once per iteration and never once
+  # per zone.
+  def distances_from(room_id)
+    room = Map[room_id]
+    return nil unless room
+
+    _previous, distances = room.dijkstra
+    distances
+  end
+
+  def reset_capture
+    Flags.reset(BLOCKED_FLAG)
+  end
+
+  # Flags[key] holds the MatchData, not true (drparser.rb:93). MatchData#string
+  # is the WHOLE line; [0] would be just the fragment our pattern matched,
+  # which throws away the guard's actual words -- and those words are the
+  # entire value of a blocked record, because a human adjudicates from them.
+  def blocking_line
+    match = Flags[BLOCKED_FLAG]
+    return nil unless match
+
+    match.respond_to?(:string) ? match.string.strip : nil
+  end
+
+  def engaged?
+    Flags[ENGAGED_FLAG] ? true : false
+  end
+
+  def now
+    Time.now
+  end
+
+  # DRCT.walk_to BLOCKS for the whole trip: its polling loop
+  # (common-travel.rb:227-259) runs on this thread. So the caller cannot
+  # time itself out, and the spec's original "wrap each walk_to in a
+  # deadline" is not implementable as written (amendment A1). A watchdog
+  # THREAD is the way, and it has to kill go2 REPEATEDLY:
+  #
+  #   walk_to's engaged branch (common-travel.rb:238-244) relaunches go2
+  #   unconditionally -- it ignores restart_on_fail -- and resets its own
+  #   timer, so walk_to's 90 second stall watchdog can never fire while the
+  #   character is being attacked over and over. A hunting zone is exactly
+  #   where that state persists. One kill would simply be undone.
+  #
+  # Killing go2 does end walk_to's loop, because Script.running.include? is
+  # its only condition. kill_script is async by default (script.rb:1776-1784),
+  # so the kill returns before go2's own before_dying revert of the map edges
+  # it nulled has finished -- that is why the watchdog keeps ticking rather
+  # than killing once and exiting.
+  #
+  # walk_to(room, false) suppresses only walk_to's OWN outer recursion. go2
+  # still restarts internally, which is the right level: we want one LOGICAL
+  # attempt, not one go2 process.
+  def walk_to(room_id, deadline)
+    @attempts += 1
+    started = Time.now
+    done = false
+    timed_out = false
+
+    watchdog = Thread.new do
+      blocked_at = nil
+      until done
+        blocked_at ||= Time.now if Flags[BLOCKED_FLAG]
+        if Time.now - started > deadline
+          timed_out = true
+          kill_script('go2')
+        elsif blocked_at && Time.now - blocked_at > BLOCKED_GRACE
+          # Evidence in hand. Kill WITHOUT setting timed_out, so the verdict
+          # stays `blocked`. See BLOCKED_GRACE above.
+          kill_script('go2')
+        end
+        sleep WATCHDOG_TICK
+      end
+    end
+
+    arrived = begin
+      DRCT.walk_to(room_id, false)
+    rescue StandardError => e
+      # walk_to drops its Room.current&.id guard at common-travel.rb:265 and
+      # :272 (amendment A2), so a room that becomes unresolvable mid-trip can
+      # raise here. A raised attempt is a failed attempt, never a crashed run.
+      DRC.message(format('uc-probe: walk_to(%d) raised %s: %s', room_id, e.class, e.message))
+      false
+    ensure
+      done = true
+    end
+
+    watchdog.join(WATCHDOG_JOIN)
+    watchdog.kill if watchdog.alive?
+
+    [arrived, timed_out, (Time.now - started).round(1)]
+  end
+
+  # Checked by Session between every zone AND between the rooms of one zone.
+  # Every reader here is free -- a cached XML or class-variable read, no game
+  # command (39-probe-runtime-facts.md Q6). DRCH.check_health is deliberately
+  # NOT in this ladder: it issues a live `health` command, and a ladder that
+  # costs a command cannot be polled this often.
+  #
+  # Encumbrance is deliberately absent too. The probe never loots and never
+  # fights, so encumbrance cannot change during a run, and inventing a
+  # threshold for a value that cannot move would be noise.
+  def abort_reason
+    return :budget_spent if @attempts >= @budget
+    return note(:dead) if dead?
+    return note(:health, DRStats.health) if DRStats.health < HEALTH_FLOOR
+    return note(:bleeding) if checkbleeding
+    return note(:spirit, DRStats.spirit) if DRStats.spirit < SPIRIT_FLOOR
+
+    nil
+  end
+
+  private
+
+  def note(reason, value = nil)
+    @abort_detail = value
+    reason
+  end
+end
+
+# Owns the modes, the run metadata, and persistence. No decision logic --
+# every verdict, every ordering choice and the whole loop belong to
+# UberCombat::Probe (lib/uc_probe.rb).
+class UcProbe
+  # No 'base-' prefix, and that is mandatory rather than stylistic: Lich's
+  # get_data globs base*.yaml across scripts/data and scripts/data/custom on
+  # EVERY call (setup_files.rb:181-190), so a base-prefixed results file here
+  # would be silently loaded as profile data by unrelated scripts.
+  RESULTS_FILE = 'uc-probe-results.yaml'
+
+  # CharSettings is scoped to Script.current.name (settings.rb:72, :153), so
+  # this key lives in uc-probe's own namespace and cannot collide with any
+  # other script's. Writes are immediate and Marshal-backed, so a nested Hash
+  # round-trips exactly (39-probe-runtime-facts.md Q3).
+  RECORDS_KEY = 'probe_records'
+  RUN_KEY = 'probe_last_run'
+
+  # Bounded so a run cannot end by hanging in the recovery path itself.
+  GOSAFE_TIMEOUT = 300
+
+  def initialize
+    @zone_table = UberCombat::ZoneTable.from_game_data
+    @tier = Lich::Common::Account.subscription
+    @character = UberCombat::Character.new
+    # The CONCENTRATED pole, which is simply the highest defence
+    # (uc_character.rb:98). It is the more permissive of the two poles, and
+    # the picker escalates to it when spread will not admit a zone, so using
+    # it here keeps the probe from deferring a zone the picker would still
+    # be willing to select. Read live on every invocation, never cached
+    # across runs: the character advances, and a stale metric would defer
+    # zones they have already grown into.
+    @defence = @character.defensive_metric(:concentrated)
+  end
+
+  # PLAN ONLY. Issues no game command, walks nowhere, writes nothing.
+  def plan
+    banner
+    world = ProbeWorld.new(0)
+    begin
+      partition = UberCombat::Probe.partition(@zone_table.zones, world.method(:rooms_for_tag),
+                                              defence: @defence)
+      report_partition(partition)
+      report_order(world, partition.probeable)
+    ensure
+      world.cleanup
+    end
+    report_progress
+  end
+
+  def run(budget)
+    return unless tier_known?
+
+    banner
+    world = ProbeWorld.new(budget)
+    unless preflight(world)
+      world.cleanup
+      return
+    end
+
+    DRC.message(format('-- Probing, budget %d travel attempt(s) --', budget))
+    warn_about_stop_for_dead
+    started = Time.now.utc.iso8601
+
+    outcome = nil
+    begin
+      session = UberCombat::Probe::Session.new(pending_zones, world, tier: @tier, meta: meta,
+                                               defence: @defence)
+      outcome = session.run
+    ensure
+      world.cleanup
+    end
+
+    # Merged, never replaced. Records accumulate across runs and across
+    # characters, and Probe.record's reachability hash is keyed by account
+    # tier precisely so a premium result and a basic result on the same zone
+    # can both survive (lib/uc_probe.rb, .record's comment).
+    store(outcome.records)
+    store_run(started, outcome.aborted)
+    report_outcome(world, outcome)
+    recover(world, outcome.aborted)
+    write_results
+  end
+
+  def report
+    banner
+    report_progress
+    write_results
+  end
+
+  private
+
+  # A run whose account tier is unknown is worthless -- every verdict it
+  # produces is unattributable, and the whole design turns on comparing a
+  # premium result against a basic one. Account.subscription is nil until a
+  # character logs in through Lich's own auth path (account.rb:5, :26).
+  def tier_known?
+    return true if @tier
+
+    DRC.message('uc-probe: Account.subscription is nil, so the account tier is unknown.')
+    DRC.message('  Every result would be unattributable. Refusing to probe.')
+    false
+  end
+
+  # The abort ladder is checked before the first zone anyway, so without this
+  # a character who is already hurt would "start" a run, settle nothing, and
+  # then be walked to the saferoom by the recovery path -- which looks like a
+  # malfunction rather than a refusal. Saying so up front is the difference
+  # between a script that declined and a script that misbehaved.
+  #
+  # The budget is excluded deliberately: a fresh world reports :budget_spent
+  # only when the caller asked for zero attempts, which the argument parser
+  # already rejects.
+  def preflight(world)
+    reason = world.abort_reason
+    return true if reason.nil? || reason == :budget_spent
+
+    detail = world.abort_detail ? " (#{world.abort_detail})" : ''
+    DRC.message(format('uc-probe: NOT starting -- %s%s.', reason, detail))
+    DRC.message('  The probe never fights, so it will not walk a character that is already in trouble.')
+    false
+  end
+
+  # go2 PAUSES ITSELF when it sees a corpse (go2.lic:2399, :2465), which in an
+  # unattended run parks the character next to a dead player until the
+  # deadline kills it -- one wasted deadline per attempt, and a verdict of
+  # :timeout that means nothing. The setting is go2's, and CharSettings is
+  # scoped to the CALLING script, so reading it needs the scope named
+  # explicitly (39-probe-runtime-facts.md Q8).
+  def warn_about_stop_for_dead
+    stop_for_dead = Lich::Common::Settings.get_scoped_setting(
+      CharSettings.active_scope, 'stop for dead', script_name: 'go2'
+    )
+    return unless stop_for_dead
+
+    DRC.message("uc-probe: WARNING -- go2's 'stop for dead' is on.")
+    DRC.message('  go2 pauses itself next to a corpse, which an unattended run reads as a timeout.')
+  rescue StandardError => e
+    DRC.message("uc-probe: could not read go2's 'stop for dead' setting (#{e.class}). Continuing.")
+  end
+
+  # There is no runtime accessor for the loaded map file, so this is INFERRED
+  # rather than confirmed (39-probe-runtime-facts.md Q9). It is sound: Lich
+  # tries json_map_files in order and returns on the first that parses
+  # (map_base.rb:337-357), and that list is sorted newest-first
+  # (map_base.rb:428-437). Recorded because a verdict is only comparable
+  # against results from the same map data.
+  def map_name
+    File.basename(Map.json_map_files.first.to_s)
+  rescue StandardError
+    'unknown'
+  end
+
+  def meta
+    { character: XMLData.name, game: XMLData.game, map: map_name }
+  end
+
+  def stored
+    CharSettings[RECORDS_KEY] || {}
+  end
+
+  # A run covers only what no run has settled yet. Session's own "never probe
+  # the same zone twice" rule (lib/uc_probe.rb) holds WITHIN one run; this is
+  # what makes the rule hold ACROSS runs, and it is what lets a 331-zone job
+  # be done in bounded pieces without repeating work or spending the budget
+  # on answers already in hand.
+  #
+  # It settles a timeout too. Retrying one is a human decision, made by
+  # clearing that zone out of CharSettings, not something a later run does on
+  # its own -- an unattended retry loop on a zone that wedges once would
+  # spend every future budget on the same wedge.
+  def pending_zones
+    settled = stored
+    @zone_table.zones.reject { |zone| settled.key?(zone.key) }
+  end
+
+  def store(records)
+    CharSettings[RECORDS_KEY] = stored.merge(records)
+  end
+
+  # The LAST run's timing and stop reason, kept beside the records so that
+  # ;uc-probe report can rebuild a complete results file without a run
+  # having just happened. The merge tool prints these as the provenance of
+  # the file it is reading, and a file that cannot say when it was collected
+  # or why it stopped is a file nobody can weigh.
+  def store_run(started, aborted)
+    CharSettings[RUN_KEY] = {
+      'started'  => started,
+      'finished' => Time.now.utc.iso8601,
+      'aborted'  => aborted&.to_s
+    }
+  end
+
+  def stored_run
+    CharSettings[RUN_KEY] || {}
+  end
+
+  def banner
+    DRC.message(format('=== uc-probe: %s, tier=%s, defences=%.1f, %d zones loaded ===',
+                       XMLData.name, @tier || 'UNKNOWN', @defence, @zone_table.zones.size))
+  end
+
+  def report_partition(partition)
+    DRC.message('-- Zone partition --')
+    DRC.message(format('  probeable      %4d', partition.probeable.size), false)
+    DRC.message(format('  escort         %4d  (reached by escort, never walked)', partition.escort.size), false)
+    DRC.message(format('  no map tag     %4d  (nothing to walk to)', partition.no_tag.size), false)
+    DRC.message(format('  out of band    %4d  (deferred: defences %.1f cannot survive there)',
+                       partition.out_of_band.size, @defence), false)
+    DRC.message('  Deferred zones are NOT recorded. They come back when the character grows.', false)
+    DRC.message('  The picker would refuse them on rank anyway, so their premium flag', false)
+    DRC.message('  cannot change any decision this character makes.', false)
+
+    unknown = partition.probeable.count(&:premium_unknown?)
+    known = partition.probeable.count { |zone| zone.premium == true }
+    DRC.message(format('  of the probeable: %d unresolved (the job), %d known premium (the control)',
+                       unknown, known), false)
+    DRC.message('  A known-premium zone that comes back reached means one of the two', false)
+    DRC.message('  sources is wrong. Stop and investigate rather than merging.', false)
+  end
+
+  # The same nearest-first ordering the run itself would follow, printed
+  # without moving. Probe.rank settles the whole ranking in one call, so this
+  # shows the FIRST zone truthfully; every zone after it depends on where the
+  # character ends up, which is the point of re-ranking each iteration and is
+  # why this list is a preview rather than a schedule.
+  def report_order(world, probeable)
+    here = world.current_room_id
+    unless here
+      DRC.message('uc-probe: current room is unknown; cannot compute distance.')
+      return
+    end
+
+    distances = world.distances_from(here)
+    unless distances
+      DRC.message('uc-probe: dijkstra failed from the current room.')
+      return
+    end
+
+    settled = stored
+    pending = probeable.reject { |zone| settled.key?(zone.key) }
+    DRC.message(format('-- Nearest unprobed zones from room %d (%d still pending) --', here, pending.size))
+    preview(pending, distances, world)
+  end
+
+  def preview(pending, distances, world)
+    rows = pending.filter_map do |zone|
+      nearest = world.rooms_for_tag(zone.key)
+                     .filter_map { |id| distances[id] && [id, distances[id]] }
+                     .min_by { |(_id, dist)| dist }
+      nearest && { key: zone.key, room: nearest[0], distance: nearest[1], premium: zone.premium,
+                   band: format('%s-%s', zone.rank_min, zone.rank_max) }
+    end
+
+    if rows.empty?
+      DRC.message('  (none reachable)', false)
+      return
+    end
+
+    # The band is printed so the filter can be checked by eye. Every row here
+    # must have a floor at or below the defences shown in the banner.
+    DRC.message(format('  %8s %8s %-30s %-10s %s', 'DIST', 'ROOM', 'ZONE', 'BAND', 'PREMIUM'), false)
+    rows.sort_by { |row| row[:distance] }.first(15).each do |row|
+      DRC.message(format('  %8.1f %8d %-30s %-10s %s',
+                         row[:distance], row[:room], row[:key], row[:band], row[:premium].inspect), false)
+    end
+    DRC.message(format('  ... %d more', rows.size - 15), false) if rows.size > 15
+  end
+
+  def report_outcome(world, outcome)
+    DRC.message('-- Run outcome --')
+    DRC.message(format('  zones settled this run: %d', outcome.records.size), false)
+    DRC.message(format('  travel attempts spent:  %d', world.attempts), false)
+    DRC.message(format('  deferred, out of band:  %d', outcome.deferred), false)
+    if outcome.aborted
+      detail = world.abort_detail ? " (#{world.abort_detail})" : ''
+      DRC.message(format('  STOPPED: %s%s', outcome.aborted, detail), false)
+    end
+    tally = outcome.records.values.group_by { |rec| rec['reachability'][@tier]['verdict'] }
+    tally.sort_by { |verdict, _| verdict }.each do |verdict, list|
+      DRC.message(format('  %-16s %4d', verdict, list.size), false)
+    end
+  end
+
+  # Only a SAFETY abort goes to the saferoom. A spent budget is the ordinary,
+  # expected end of a bounded run, and walking the character across the
+  # continent every time a 10-attempt run finishes would cost more travel
+  # than the run itself.
+  def recover(_world, aborted)
+    return if aborted.nil? || aborted == :budget_spent
+
+    DRC.message(format('-- Safety abort (%s): running gosafe --', aborted))
+    Script.run_child('gosafe', timeout: GOSAFE_TIMEOUT)
+    DRC.message('  gosafe finished.', false)
+  rescue StandardError => e
+    # Never let the recovery path be the thing that kills the run's report.
+    # The records are already stored by the time this runs.
+    DRC.message(format('  gosafe did not complete (%s: %s). Recover by hand.', e.class, e.message))
+  end
+
+  def report_progress
+    records = stored
+    DRC.message(format('-- Recorded so far: %d zone(s) --', records.size))
+    return if records.empty?
+
+    by_verdict = Hash.new(0)
+    records.each_value do |record|
+      record['reachability'].each_value { |entry| by_verdict[entry['verdict']] += 1 }
+    end
+    by_verdict.sort_by { |verdict, _| verdict }.each do |verdict, count|
+      DRC.message(format('  %-16s %4d', verdict, count), false)
+    end
+
+    blocked = records.select do |_key, record|
+      record['reachability'].each_value.any? { |entry| entry['verdict'].start_with?('blocked') }
+    end
+    report_blocked(blocked)
+  end
+
+  # The blocking lines are the whole reason a blocked verdict is worth
+  # anything. The probe cannot tell a premium gate from a quest gate, a
+  # locked door or stale map data (spec section 6), so a person reads these
+  # and adjudicates. Printing the verdict without the line would hand nobody
+  # anything to judge.
+  def report_blocked(blocked)
+    return if blocked.empty?
+
+    DRC.message('  -- Blocked zones, with the line that blocked them --', false)
+    blocked.each do |key, record|
+      record['reachability'].each do |tier, entry|
+        DRC.message(format('    %-30s %-8s %s', key, tier, entry['verdict']), false)
+        DRC.message(format('      %s', entry['line']), false) if entry['line']
+      end
+    end
+  end
+
+  # CharSettings[...] DOES NOT RETURN A HASH. It returns a
+  # Lich::Common::SettingsProxy (settings_proxy.rb:6), which quacks like one
+  # for every read this script does -- merge, each_value, select, size all
+  # work -- and then betrays it at exactly one point: to_yaml serialises the
+  # PROXY, not the data. The first live run wrote a results file whose
+  # `records` key was `!ruby/object:Lich::Common::SettingsProxy` with the real
+  # table buried under `target:`, which the merge tool cannot read at all.
+  #
+  # This is the same class of failure as the get_data OpenStruct bug: an
+  # object that behaves like the container it wraps until the one moment it
+  # does not, failing in a way no test using plain Hashes could catch.
+  #
+  # The walk is DEEP rather than a single to_h. The proxy wraps values it
+  # hands back on read (Settings.wrap_value_if_container), so a nested level
+  # can be a proxy too, and one surviving anywhere in the tree poisons the
+  # whole document.
+  def plain(value)
+    case value
+    when Array then value.map { |item| plain(item) }
+    when Hash  then value.each_with_object({}) { |(key, item), out| out[key] = plain(item) }
+    else
+      container = unwrap(value)
+      container.nil? ? value : plain(container)
+    end
+  end
+
+  # The shape has to be discovered by TRYING, not by asking. SettingsProxy
+  # overrides respond_to? as `super || @target.respond_to?(...)`
+  # (settings_proxy.rb:191), and the proxy defines both to_hash and to_ary
+  # itself, so it answers true to both no matter which one its target can
+  # actually satisfy -- and the wrong one raises (delegate_conversion's
+  # strict branch, settings_proxy.rb:57-59).
+  #
+  # nil means "not a container, leave it alone". Returning the value itself
+  # instead would make #plain recurse forever on any scalar.
+  def unwrap(value)
+    return nil unless value.respond_to?(:to_hash) || value.respond_to?(:to_ary)
+
+    begin
+      value.to_hash
+    rescue StandardError
+      begin
+        value.to_ary
+      rescue StandardError
+        nil
+      end
+    end
+  end
+
+  def results_path
+    File.join(SCRIPT_DIR, 'data', 'custom', RESULTS_FILE)
+  end
+
+  # Written whole on every call rather than appended to, because CharSettings
+  # is the record of truth for a run in progress and this file is only ever a
+  # snapshot of it for the merge tool to read. Regenerating it can therefore
+  # never disagree with the database.
+  def write_results
+    records = stored
+    if records.empty?
+      DRC.message('-- No results to write --')
+      return
+    end
+
+    file_meta = meta.transform_keys(&:to_s).merge('tier' => @tier).merge(stored_run)
+    payload = { 'meta' => file_meta, 'records' => plain(records) }
+    File.write(results_path, payload.to_yaml)
+    DRC.message('-- Results written --')
+    DRC.message("  #{results_path}", false)
+    # The path is spelled out rather than shown as a placeholder in angle
+    # brackets. DRC.message sends its text down a channel that strips
+    # anything looking like a tag, so the first live run printed the command
+    # with its argument silently missing.
+    DRC.message("  Merge with: ruby notes/uber-combat/tools/merge-probe-results.rb #{results_path}",
+                false)
+  end
+end
+
+# script is bound to Script.current by Lich's own script-launch eval
+# (script.rb:176). vars[1], vars[2] are the whitespace-split tokens
+# (script.rb:3098-3099). Same positional convention uc-leg.lic uses.
+#
+# No argument is the read-only plan -- the case that must never change.
+mode = script.vars[1]
+
+case mode
+when nil
+  UcProbe.new.plan
+when /\Arun\z/i
+  budget = script.vars[2]
+  if budget.nil? || budget !~ /\A[1-9][0-9]*\z/
+    DRC.message('uc-probe: run needs a positive attempt budget. Usage: ;uc-probe run <n>')
+    DRC.message('  There is no unbounded mode. A full table is hours of unattended walking.')
+  else
+    UcProbe.new.run(budget.to_i)
+  end
+when /\Areport\z/i
+  UcProbe.new.report
+else
+  DRC.message("uc-probe: unknown argument '#{mode}'. Usage: ;uc-probe | ;uc-probe run <n> | ;uc-probe report")
+end
