@@ -173,6 +173,17 @@ zones:
     source_line: 29
     notes: "Mixed with lower-level wolves. Great swarm."
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -180,6 +191,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   blue_crocs:
     rank:
@@ -196,6 +208,17 @@ zones:
     source_line: 36
     notes: "Spawn is hit or miss, often busy."
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -203,6 +226,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   brocket_young:
     rank:
@@ -219,6 +243,17 @@ zones:
     source_line: 43
     notes: "High swarm"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -226,6 +261,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   golden_atiket:
     rank:
@@ -244,6 +280,17 @@ zones:
     source_line: 51
     notes: "mixed in with lower-level Young Firecats"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -251,6 +298,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   brocket_mid:
     rank:
@@ -267,6 +315,17 @@ zones:
     source_line: 58
     notes: "high swarm"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -274,6 +333,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   leucro1:
     rank:
@@ -290,6 +350,17 @@ zones:
     source_line: 65
     notes: "Requires at least 130 Perception to access"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -297,6 +368,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   leucro2:
     rank:
@@ -313,6 +385,17 @@ zones:
     source_line: 73
     notes: "Requires at least 130 Perception to access, smidgen | higher than leucro1, better spawns"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -320,6 +403,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: low
   kartais:
     rank:
@@ -336,6 +420,17 @@ zones:
     source_line: 80
     notes: "Undead, great swarm, corporeal"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -343,6 +438,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   velaka_westanuryn:
     rank:
@@ -359,6 +455,17 @@ zones:
     source_line: 87
     notes: "May have a wandering velaka_slaver"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -366,6 +473,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   brocket_elder:
     rank:
@@ -382,6 +490,17 @@ zones:
     source_line: 94
     notes: "high swarm"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -389,6 +508,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   velaka_slavers:
     rank:
@@ -405,6 +525,17 @@ zones:
     source_line: 101
     notes: "May have a wandering velaka_westanuryn"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -412,6 +543,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   red-gold_atiket:
     rank:
@@ -430,6 +562,17 @@ zones:
     source_line: 108
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -437,6 +580,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   geni:
     rank:
@@ -453,6 +597,17 @@ zones:
     source_line: 116
     notes: "Good spawn but spread out, you may need to move around | Requires very high perception, known to get stuck with 250-300+"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -460,6 +615,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   supple_firecat:
     rank:
@@ -478,6 +634,17 @@ zones:
     source_line: 124
     notes: "The weaker Muscular firecats are mixed in with Supple firecats"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -485,6 +652,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   polohizh_hara:
     rank:
@@ -501,6 +669,17 @@ zones:
     source_line: 130
     notes: null
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -508,6 +687,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   desert_juvenile_armadillos:
     rank:
@@ -524,6 +704,17 @@ zones:
     source_line: 137
     notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -531,6 +722,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   adult_armadillos:
     rank:
@@ -547,6 +739,17 @@ zones:
     source_line: 144
     notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -554,6 +757,7 @@ zones:
       province: comment
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   elder_armadillos:
     rank:
@@ -570,6 +774,17 @@ zones:
     source_line: 151
     notes: "Blinds, escort traverses a maze, pretty empty, good swarm"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -577,6 +792,7 @@ zones:
       province: comment
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   rats:
     rank:
@@ -593,6 +809,17 @@ zones:
     source_line: 342
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 6046
+        rooms_tried: [6046]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:22:28Z'
+        engaged: false
+        elapsed: 6.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -600,6 +827,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   black_rats:
     rank:
@@ -616,6 +844,17 @@ zones:
     source_line: 352
     notes: "same rats, out ne gate"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 14106
+        rooms_tried: [14106]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:33:11Z'
+        engaged: false
+        elapsed: 2.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -623,6 +862,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   rats_lumber:
     rank:
@@ -638,14 +878,27 @@ zones:
     access: plain
     source_line: 360
     notes: "premie only rooms - in shipyard"
-    premium: false
+    premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 13172
+        rooms_tried: [13171, 13172]
+        line: The air shimmers in front of you as you try to enter the stacks of lumber.  It feels as if an invisible force is holding you back.
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:16Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: critter_roster
+      premium: probe_adjudicated
+      reachability: probe_walk
     confidence: high
   rats_brewery:
     rank:
@@ -661,14 +914,27 @@ zones:
     access: plain
     source_line: 367
     notes: "premie only rooms - out ne gate"
-    premium: false
+    premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8488
+        rooms_tried: [8485, 8488]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:16:05Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: critter_roster
+      premium: probe_adjudicated
+      reachability: probe_walk
     confidence: high
   louts:
     rank:
@@ -685,6 +951,17 @@ zones:
     source_line: 373
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 690
+        rooms_tried: [690]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:58Z'
+        engaged: false
+        elapsed: 6.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -692,6 +969,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   mechanical_mice:
     rank:
@@ -708,6 +986,17 @@ zones:
     source_line: 393
     notes: "Flex creatures, require special weapon material to hit | 51715, 51716, and 132 are outdoors, rest are indoors."
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 132
+        rooms_tried: [132]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:19:48Z'
+        engaged: false
+        elapsed: 12.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -715,6 +1004,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: low
   hogs:
     rank:
@@ -731,6 +1021,17 @@ zones:
     source_line: 407
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1438
+        rooms_tried: [1438]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:24Z'
+        engaged: false
+        elapsed: 8.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -738,6 +1039,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   silverfish:
     rank:
@@ -815,6 +1117,17 @@ zones:
     source_line: 445
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1502
+        rooms_tried: [1502]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:30Z'
+        engaged: false
+        elapsed: 2.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -822,6 +1135,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   pale_grey_death_squirrels:
     rank:
@@ -837,14 +1151,26 @@ zones:
     access: plain
     source_line: 452
     notes: null
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1113
+        rooms_tried: [1113]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:17:29Z'
+        engaged: false
+        elapsed: 8.0
     provenance:
       rank: comment
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: high
   goblins:
     rank:
@@ -864,14 +1190,26 @@ zones:
     access: plain
     source_line: 466
     notes: null
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1473
+        rooms_tried: [1473]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:28Z'
+        engaged: false
+        elapsed: 4.0
     provenance:
       rank: comment_multilink_a2
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: medium
   goblin_shaman_crossing:
     rank:
@@ -888,6 +1226,17 @@ zones:
     source_line: 475
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 8976
+        rooms_tried: [8976]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:36Z'
+        engaged: false
+        elapsed: 6.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -895,6 +1244,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   badgers:
     rank:
@@ -1026,6 +1376,17 @@ zones:
     source_line: 524
     notes: "There are Blood Dryads and Blood Nyads in this area."
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1033,6 +1394,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   cougars_forest_of_night:
     rank:
@@ -1049,6 +1411,17 @@ zones:
     source_line: 534
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1056,6 +1429,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   grass_eels:
     rank:
@@ -1072,6 +1446,17 @@ zones:
     source_line: 542
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1490
+        rooms_tried: [1490]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:24:09Z'
+        engaged: false
+        elapsed: 16.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1079,6 +1464,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   grass_eels_incline:
     rank:
@@ -1119,14 +1505,26 @@ zones:
     access: plain
     source_line: 560
     notes: "There are Water Sprites and Glutinous Lipopods in this area. | Very heavy RT on the way in and out of the area."
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 9042
+        rooms_tried: [9042]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T10:54:13Z'
+        engaged: false
+        elapsed: 16.0
     provenance:
       rank: comment_multilink_a2
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: medium
   cougars:
     rank:
@@ -1143,6 +1541,17 @@ zones:
     source_line: 569
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1512
+        rooms_tried: [1512]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:50Z'
+        engaged: false
+        elapsed: 14.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1150,6 +1559,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   trollkin:
     rank:
@@ -1212,6 +1622,17 @@ zones:
     source_line: 589
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 7292
+        rooms_tried: [7292]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:18:43Z'
+        engaged: false
+        elapsed: 28.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1219,6 +1640,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   hogs_vineyard:
     rank:
@@ -1237,6 +1659,17 @@ zones:
     source_line: 601
     notes: "Newly separated to hogs/boars only"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1750
+        rooms_tried: [1750]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:33:09Z'
+        engaged: false
+        elapsed: 6.0
     provenance:
       rank: comment_multilink_a2
       critters: comment_url_slug
@@ -1244,6 +1677,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: medium
   cougars_vineyard:
     rank:
@@ -1262,6 +1696,17 @@ zones:
     source_line: 610
     notes: "Newly separated to only cougars and grendals(nocturnal)"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1755
+        rooms_tried: [1755]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:13:56Z'
+        engaged: false
+        elapsed: 4.0
     provenance:
       rank: comment_multilink_a2
       critters: comment_url_slug
@@ -1269,6 +1714,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: medium
   wood_trolls_vineyard:
     rank:
@@ -1285,6 +1731,17 @@ zones:
     source_line: 622
     notes: "Newly separated to wood trolls only"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1765
+        rooms_tried: [1765]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:15:07Z'
+        engaged: false
+        elapsed: 4.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1292,6 +1749,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   animated_items:
     rank:
@@ -1305,12 +1763,25 @@ zones:
     source_line: 629
     notes: "new mob - critter level 7-9                                            40-65 | Premie Only Rooms"
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8488
+        rooms_tried: [8485, 8484, 8488]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:17:21Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: name_match
+      reachability: probe_walk
     confidence: medium
   tree_snakes_spiders_baearholt:
     rank:
@@ -1324,12 +1795,25 @@ zones:
     source_line: 638
     notes: "smaller version of the Therengia mobs                                  60-80 | critter level  10-14 - snakes by day, spiders by night"
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8467
+        rooms_tried: [8469, 8467]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:15:37Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: name_match
+      reachability: probe_walk
     confidence: medium
   ossein_amalgams:
     rank:
@@ -1346,6 +1830,17 @@ zones:
     source_line: 651
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1353,6 +1848,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   greater_water_sprites:
     rank:
@@ -1366,12 +1862,25 @@ zones:
     source_line: 659
     notes: "new mob - critter level 18-22                                          85-130"
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8463
+        rooms_tried: [8464, 8463]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:13:04Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: name_match
+      reachability: probe_walk
     confidence: medium
   putrid_tree_snakes:
     rank:
@@ -1388,6 +1897,17 @@ zones:
     source_line: 669
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1395,6 +1915,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   undead_gerbils:
     rank:
@@ -1408,12 +1929,25 @@ zones:
     source_line: 680
     notes: "new mob - critter level 23-27                                          120-160 | You'll need to remove gerbil's from the ignored_npcs: list otherwise it | just sit there not hunting."
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8439
+        rooms_tried: [8441, 8439]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:34:47Z'
+        engaged: false
+        elapsed: 92.0
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: name_match
+      reachability: probe_walk
     confidence: medium
   storm_geese:
     rank:
@@ -1427,12 +1961,25 @@ zones:
     source_line: 690
     notes: "new mob - critter level 28-32                                         130-200 | You'll need to remove geese (goose) from the ignored_npcs: list otherwise it | just sit there not hunting."
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 8451
+        rooms_tried: [8453, 8451]
+        line: A worried-looking farmhand bars your way, saying "Having a problem with some critters -- Baearholt's sent for hunters, and ordered me to keep everyone else out, I'm afraid."
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:13:52Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: name_match
+      reachability: probe_walk
     confidence: medium
   razor_zombie_boars:
     rank:
@@ -1467,14 +2014,26 @@ zones:
     access: plain
     source_line: 706
     notes: null
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 706
+        rooms_tried: [706]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:33:02Z'
+        engaged: false
+        elapsed: 4.0
     provenance:
       rank: comment
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: high
   bobcats:
     rank:
@@ -1518,6 +2077,17 @@ zones:
     source_line: 725
     notes: "beware people mining and leaving \"rocks\" behind that may be very heavy and autolooted"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 7235
+        rooms_tried: [7235]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:17:55Z'
+        engaged: false
+        elapsed: 12.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1525,6 +2095,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   reavers:
     rank:
@@ -1542,14 +2113,26 @@ zones:
     access: plain
     source_line: 733
     notes: "Caution: hounds are live and reavers are undead"
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1848
+        rooms_tried: [1848]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T10:54:45Z'
+        engaged: false
+        elapsed: 32.0
     provenance:
       rank: comment_multilink_a2
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: medium
   bone_wolves:
     rank:
@@ -1613,14 +2196,26 @@ zones:
     access: plain
     source_line: 757
     notes: null
-    premium: null
+    premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 19214
+        rooms_tried: [19214]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:18:45Z'
+        engaged: false
+        elapsed: 2.0
     provenance:
       rank: comment
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: banner
       towns: none
-      premium: unresolved
+      premium: probe_walk
+      reachability: probe_walk
     confidence: high
   buccas_premium:
     rank:
@@ -1637,6 +2232,18 @@ zones:
     source_line: 766
     notes: "same buccas, premie only rooms"
     premium: true
+    reachability:
+      NORMAL:
+        verdict: blocked
+        room: 16361
+        rooms_tried: [16360, 16361]
+        line: The air shimmers in front of you as you try to enter the rocky slope.  It feels as if an invisible force is holding you back.
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:19:33Z'
+        engaged: false
+        elapsed: 24.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1644,6 +2251,7 @@ zones:
       province: banner
       towns: none
       premium: key_name
+      reachability: probe_walk
     confidence: high
   endrus_serpents:
     rank:
@@ -1683,6 +2291,17 @@ zones:
     source_line: 783
     notes: "19228 is a Safe room, don't include in the hunting section"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 19221
+        rooms_tried: [19221]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:19:35Z'
+        engaged: false
+        elapsed: 2.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1690,6 +2309,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   crossing_blood_wolves:
     rank:
@@ -1706,6 +2326,17 @@ zones:
     source_line: 791
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 1554
+        rooms_tried: [1554]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:23:52Z'
+        engaged: false
+        elapsed: 2.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1713,6 +2344,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   rock_trolls:
     rank:
@@ -1729,6 +2361,17 @@ zones:
     source_line: 800
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: reached
+        room: 8946
+        rooms_tried: [8946]
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T06:17:43Z'
+        engaged: false
+        elapsed: 14.0
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -1736,6 +2379,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   rock_trolls_rockslide:
     rank:
@@ -2773,6 +3417,17 @@ zones:
     source_line: 1255
     notes: "New creature (2026), designed during SimuCon live dev panel."
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -2780,6 +3435,7 @@ zones:
       province: banner
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   crauyarin_scuttler:
     rank:
@@ -2865,6 +3521,17 @@ zones:
     source_line: 1300
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -2872,6 +3539,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   xalas_1:
     rank:
@@ -3237,6 +3905,17 @@ zones:
     source_line: 1448
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3244,6 +3923,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   snippets:
     rank:
@@ -3588,6 +4268,17 @@ zones:
     source_line: 1582
     notes: null
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3595,6 +4286,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   windbags_sylphs:
     rank:
@@ -3820,6 +4512,17 @@ zones:
     source_line: 1662
     notes: "horses & antelope sometimes also present"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3827,6 +4530,7 @@ zones:
       province: banner
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   shard_peccary_plus:
     rank:
@@ -3843,6 +4547,17 @@ zones:
     source_line: 1675
     notes: "these appraise slightly higher"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3850,6 +4565,7 @@ zones:
       province: banner
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   beltunumshi_thicket:
     rank:
@@ -3889,6 +4605,17 @@ zones:
     source_line: 1693
     notes: "also antelopes"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3896,6 +4623,7 @@ zones:
       province: banner
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   shard_clouded_arzumos_plus:
     rank:
@@ -3912,6 +4640,17 @@ zones:
     source_line: 1703
     notes: "these appraise slightly higher"
     premium: null
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -3919,6 +4658,7 @@ zones:
       province: banner
       towns: none
       premium: unresolved
+      reachability: probe_walk
     confidence: high
   shard_gryphons:
     rank:
@@ -5884,12 +6624,24 @@ zones:
     source_line: 2601
     notes: "No elanthipeida page yet - dryanoxie                                 475-680? (lvl 85 +/- 2)"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment_freetext
       critters: none
       province: banner
       towns: none
       premium: elanthipedia_critter_infobox
+      reachability: probe_walk
     confidence: medium
   sky_giants:
     rank:
@@ -8267,6 +9019,17 @@ zones:
     source_line: 3622
     notes: "swarmy, immune to electricity, have strong magics"
     premium: false
+    reachability:
+      NORMAL:
+        verdict: no_tag
+        room: null
+        rooms_tried: []
+        character: Zurvan
+        game: DR
+        map: map-1788352278.json
+        at: '2026-09-03T05:32:52Z'
+        engaged: false
+        elapsed: null
     provenance:
       rank: comment
       critters: comment_url_slug
@@ -8274,6 +9037,7 @@ zones:
       province: banner
       towns: none
       premium: critter_roster
+      reachability: probe_walk
     confidence: high
   scaly_seordmaor_hara:
     rank:
