@@ -56,6 +56,7 @@
 lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
 load File.join(lib_dir, 'uc_character.rb')
 load File.join(lib_dir, 'uc_zone_table.rb')
+load File.join(lib_dir, 'uc_leg_settings.rb')
 load File.join(lib_dir, 'uc_probe.rb')
 
 require 'yaml'
