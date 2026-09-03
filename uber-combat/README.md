@@ -10,33 +10,55 @@ repository, in `dragonrealms/notes/uber-combat/`. Start at `99-progress.md`.
 ## What is built
 
 Wave 6 delivered the zone picker core. Wave 7 added leg advancement and the
-stance ordering. The library is pure computation. It needs no game connection,
-and it issues no game commands.
+stance ordering. Wave 8 added leg enactment through a profile overlay. Wave 9
+added premium gating. Wave 10 added the reachability probe and its merge tools.
+Wave 11 added the director hunt spine, D1.
+
+Every library file is pure computation. It needs no game connection and it
+issues no game commands. The four `.lic` scripts are thin: they own the Lich
+calls and the printing, and they own no decision.
 
 | File | Contents |
 | --- | --- |
-| `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the defence ordering |
-| `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, critter lookup |
-| `lib/uc_zone_picker.rb` | Admissibility, clustering, the itinerary builder |
+| `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the defence ordering, mindstate reads |
+| `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, zone readers, critter lookup through `critter_refs` |
+| `lib/uc_zone_picker.rb` | Admissibility, clustering, stance derivation, the itinerary builder |
 | `lib/uc_leg_tracker.rb` | Leg advancement: the hard exit, mindlock, no-gain, reselect |
+| `lib/uc_leg_overlay.rb` | Maps a leg plus live character state to a complete profile overlay hash, and reports its gaps |
+| `lib/uc_leg_settings.rb` | The one place Lich's `uc_settings` shape is read: weapons, spells, premium, `in_province_only` |
+| `lib/uc_leg_writer.rb` | Writes the overlay atomically, refuses any gap, refuses to overwrite a foreign file |
+| `lib/uc_probe.rb` | The reachability probe's decision core: partition, deadline, verdict, record, and `Probe::Session` |
+| `lib/uc_director.rb` | The D1 hunt spine: pick a leg, write its overlay, run one bounded stint, measure it, advance or repeat |
 | `uc-zones.lic` | Read-only diagnostic. Prints the itinerary and the candidate zones, nearest first |
+| `uc-leg.lic` | `;uc-leg` prints a leg, `write N` writes its overlay, `go N` writes then launches hunting-buddy |
+| `uc-probe.lic` | `;uc-probe` plans, `run N` walks a bounded budget of zones, `report` writes the results file |
+| `uc-director.lic` | `;uc-director` plans read-only, `run N` runs N productive stints, `report` prints the last run |
 
-Not built yet: the healing selector, leg enactment, session state, and the
-director loop.
+Not built yet: the healing selector, and director parts D2 through D6 (the
+fight boundary, the trigger and town cycle, session state, the robustness
+watchdog, and the guild strategy objects).
 
-## The diagnostic
+## The diagnostics
 
-`uc-zones.lic` is the only file here that needs a game session. Run it in game
-as `;uc-zones`. It reads the current character, asks the picker for its
-itinerary and its admissible zones, and orders those zones by travel distance
-from the current room. It issues no game command and changes no state.
+`uc-zones.lic` needs a game session. Run it as `;uc-zones`. It reads the
+current character, asks the picker for its itinerary and its admissible zones,
+and orders those zones by travel distance from the current room. It issues no
+game command and changes no state.
 
 Distance comes from one `Room#dijkstra` call, not from
 `Map.find_all_nearest_by_tag`. That method sorts by a Dijkstra run and then
 discards the distances (`map_base.rb:887-894`), so it cannot compare one zone
 against another.
 
-The script uses `load`, not `require`, so an edit to a library file takes
+Bare `;uc-leg`, `;uc-probe` and `;uc-director` are all read-only in the same
+way. That is a rule, not a coincidence: the mode a person reaches for by habit
+must never change anything.
+
+`;uc-director` HAS NEVER BEEN RUN IN GAME, in any mode. The whole director is
+argued from source and covered by unit tests, and nothing about it has been
+observed under a real hunt.
+
+The scripts use `load`, not `require`, so an edit to a library file takes
 effect on the next run without a Lich restart. Ruby prints an
 "already initialized constant" warning on every run after the first. That is
 the cost of `load` and it is expected.
@@ -49,27 +71,36 @@ bundle install
 rspec
 ```
 
+341 examples, about 2 seconds, no game needed.
+
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
 from `custom-scripts/`:
 
 ```sh
 cd custom-scripts
-rubocop uber-combat
+BUNDLE_GEMFILE=uber-combat/Gemfile bundle exec rubocop uber-combat
 ```
 
-The custom cop rejects non-ASCII source. Write no arrows, no em dashes and no
-smart quotes in `.rb` files.
+29 files, no offenses. The custom cop rejects non-ASCII source. Write no
+arrows, no em dashes and no smart quotes in `.rb` files.
 
 The suite runs in one process and needs no game runtime. `spec/support/` holds
-the two doubles. `FakeSkills` mirrors the real `DRSkill.getmodrank` contract:
-an unmodified skill reports `modrank == rank`, never zero.
+the two shared doubles. `FakeSkills` mirrors the real `DRSkill.getmodrank`
+contract: an unmodified skill reports `modrank == rank`, never zero. The two
+injected world doubles are not shared and live in their own spec files, which
+is why one of them is named `FakeDirectorWorld` rather than `FakeWorld`.
+
+`spec/uc_lic_loads_spec.rb` reads every `.lic` as text and checks it both ways:
+a lib is loaded for every `UberCombat::` constant the script names, and nothing
+is loaded that the script does not use. A `.lic` names its own libs, so it can
+use a constant it never loaded while the whole suite still passes.
 
 ## The data file
 
 `data/base-uc-zones.yaml` is the source of truth. It annotates
-`dr-scripts/data/base-hunting.yaml` with rank bands, critter rosters and
-per-critter records.
+`dr-scripts/data/base-hunting.yaml` with rank bands, critter rosters,
+per-critter records, premium flags and the probe's reachability records.
 
 The runtime needs its own copy at
 `lich-5/scripts/data/custom/base-uc-zones.yaml`. The two copies must stay
@@ -88,12 +119,15 @@ the file only with that prefix.
 
 ## The runtime library path
 
-Lich loads library code from `lich-5/scripts/custom/lib/`. Each file in `lib/`
-is symlinked there, so no mirror step applies to code:
+Lich loads library code from `lich-5/scripts/custom/lib/`, and scripts from
+`lich-5/scripts/custom/`. Each file is symlinked there, so no mirror step
+applies to code:
 
 ```sh
 cd ../../lich-5/scripts/custom/lib
 ln -sfn ../../../../custom-scripts/uber-combat/lib/uc_character.rb uc_character.rb
+cd ..
+ln -sfn ../../../custom-scripts/uber-combat/uc-director.lic uc-director.lic
 ```
 
 ## Rules that this code obeys
@@ -112,3 +146,9 @@ ln -sfn ../../../../custom-scripts/uber-combat/lib/uc_character.rb uc_character.
 7. Debilitation can neither lead a leg nor end one. It is always a passenger.
 8. The defence order chooses slot 3, not slot 1. Leave `strict_weapon_stance`
    false and let combat-trainer split the points between the first two.
+9. The director measures the character, and never trusts a child script's own
+   account of what it did. `hunting-buddy` leaves `hunt_stop_reason` nil on
+   eleven exit paths, one of which is a Kernel `exit` that Lich records as a
+   clean completion, so the handle and the reason together still cannot tell a
+   half-hour of hunting from a stint that never left town. Rank movement
+   between two live reads can.

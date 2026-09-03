@@ -1,0 +1,942 @@
+# frozen_string_literal: true
+
+=begin
+  uc-director: the uber-combat hunt spine (D1).
+
+  One loop, and nothing else:
+
+    build itinerary -> choose leg -> write overlay -> run ONE bounded
+    hunting-buddy stint -> measure it -> advance, repeat, or stop.
+
+  Spec: notes/uber-combat/42-director-spec.md. Read section 0 first: seven
+  corrections, three of which overturn an earlier decision. Runtime ground
+  truth is in 41-director-runtime-facts.md and 41b-director-lifecycle-facts.md.
+
+  ALL of the decision logic lives in lib/uc_director.rb and is pure and
+  tested. This file is the WORLD ADAPTER and the presentation, nothing more --
+  the same split uc-probe.lic keeps against lib/uc_probe.rb and uc-leg.lic
+  keeps against LegOverlay/LegWriter. Every Script, DRC, DRStats, XMLData and
+  File call the director makes lives in DirectorWorld below, so the core is
+  driven by a plain double in spec/uc_director_spec.rb.
+
+    ;uc-director            -- PLAN ONLY. Read-only. Issues no game command,
+                               writes no file, launches nothing. Prints the
+                               itinerary, leg 1's overlay YAML, the exact
+                               launch line with its computed timeout, the
+                               PREDICTED write decision, and the safety floor.
+    ;uc-director run N      -- act. N is a MANDATORY positive stint budget.
+    ;uc-director report     -- print the last run's stint table. In-memory
+                               only in D1 (nothing is persisted; see below).
+
+  Examples:
+    ;uc-director
+    ;uc-director run 8
+    ;uc-director report
+
+  THE DEFAULT MODE ACTS ON NOTHING ON PURPOSE. Every script in this project
+  shipped read-only first and that discipline caught a real defect in each of
+  the last three waves. The budget argument to `run` is REQUIRED and there is
+  deliberately no unbounded mode: one stint is up to
+  DURATION_MINUTES + STINT_SLACK_SECONDS of unattended combat, so `run` with
+  no number would be an open-ended request to fight.
+
+  WHY THE BUDGET COUNTS PRODUCTIVE STINTS, not attempts: a stint that never
+  reached hunting-buddy's hunt loop taught the character nothing, so counting
+  it would let `run 8` mean anything from zero to eight hunts. A stint that
+  did not hunt increments that leg's failure counter instead (spec 6.3).
+
+  NOTHING IS PERSISTED IN D1 (spec 7.3). No CharSettings, no Vars, no results
+  file. The itinerary is re-derived from live skills on every start, so
+  nothing a restart could leave stale is ever written. The single file this
+  script touches is the character's `uc` profile overlay, written atomically
+  by LegWriter and removed again in before_dying. `;uc-director report` reads
+  a process-lifetime global, so it can report a run that finished in this
+  Lich session and nothing older. Persistence is D4's job.
+
+  THE STINT IS BOUNDED BY Script.run_child's timeout AND BY NOTHING ELSE.
+  DRCT.find_empty_room's inner `pause 0.1 until room_id == Room.current.id`
+  (common-travel.rb:323-324) has no timeout at all, and hunting-buddy walks
+  into it from find_hunting_room? (hunting-buddy.lic:231) before the hunt
+  starts. A blocked exit, a locked gate or a premium-gated zone wedges there
+  forever with no message and no stop reason. run_child's `timeout:` is the
+  only mechanism anywhere in that stack that breaks it, which is why this
+  script never uses DRC.wait_for_script_to_complete (no timeout, and it
+  returns instantly when start_script returns nil -- e.g. when hunting-buddy
+  is ALREADY RUNNING -- which a director would read as a completed stint and
+  then loop at full speed).
+=end
+
+# load (not require): edits to the uber-combat lib take effect without
+# restarting Lich. Same rationale as uc-leg.lic's and uc-probe.lic's load
+# blocks. Every UberCombat constant this file names MUST appear here --
+# spec/uc_lic_loads_spec.rb is a standing guard against exactly the omission
+# that once shipped `;uc-probe` with an unloaded LegSettings.
+lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
+load File.join(lib_dir, 'uc_character.rb')
+load File.join(lib_dir, 'uc_zone_table.rb')
+load File.join(lib_dir, 'uc_zone_picker.rb')
+load File.join(lib_dir, 'uc_leg_overlay.rb')
+load File.join(lib_dir, 'uc_leg_settings.rb')
+load File.join(lib_dir, 'uc_leg_writer.rb')
+load File.join(lib_dir, 'uc_leg_tracker.rb')
+load File.join(lib_dir, 'uc_director.rb')
+
+require 'yaml'
+
+# The world contract UberCombat::Director::Session is built against (spec
+# section 3.1). One method per row of that table, no more: the fake in
+# spec/uc_director_spec.rb and this class are checkable against one list, and
+# a method that is not in the table does not belong here.
+#
+# This class also owns every DRC.message the LOOP produces, through #announce
+# (spec 3.3). The core never reads anything back from it.
+class DirectorWorld
+  # SPEC SECTION 8. These three constants belong to the adapter because they
+  # name Lich-facing values; every other director constant lives in the pure
+  # core.
+  #
+  # HEALTH_FLOOR is 50, NOT uc-probe.lic's 75, and the difference is the whole
+  # point. The probe's own comment (uc-probe.lic:113-117) says 75 is safe
+  # BECAUSE THE PROBE NEVER FIGHTS -- any health loss at all means something
+  # attacked it. This character fights for half an hour at a stretch, so a
+  # post-stint health of 75 is a normal healthy outcome and reusing the
+  # probe's value would abort the director after nearly every stint.
+  # UNMEASURED, and it is open question (i): log health at every abort_reason
+  # call across one run and read off the between-stint distribution.
+  HEALTH_FLOOR = 50
+
+  # Spirit does not fall from ordinary combat, so the probe's value transfers
+  # unchanged (uc-probe.lic:119).
+  SPIRIT_FLOOR = 50
+
+  # Verbatim from uc-probe.lic:408. gosafe.lic is 14 lines and has no timeout
+  # of its own (it ends in DRCT.walk_to settings.safe_room), so an unbounded
+  # recovery could outlive the run it was recovering from.
+  GOSAFE_TIMEOUT = 300
+
+  # The return shape of #run_stint (spec 3.2). The Struct itself is DEFINED in
+  # lib/uc_director.rb, not here, and this adapter only builds instances of it.
+  # Spec 3.2 says "built by the adapter", which is true of the values and was
+  # briefly read as true of the declaration too -- so both files defined an
+  # identical Struct. Two declarations of one contract drift, and the drift is
+  # silent: the core reads the fields duck-typed, so a field added on one side
+  # only would read as nil on the other rather than raise. One owner, in lib/,
+  # where spec/uc_lic_loads_spec.rb's constant guard can see it.
+  Launch = UberCombat::Director::Launch
+
+  attr_reader :abort_detail, :last_itinerary, :last_stop, :refusals
+
+  def initialize
+    # get_settings with NO flex suffix, deliberately -- and here the reason is
+    # sharper than it is in uc-leg.lic:73-79. This script WRITES the character's
+    # `uc` flex file. get_settings(['uc']) would merge that generated overlay
+    # back in, so the picker and the overlay engine would be configured partly
+    # out of the previous leg's own output. uc_weapons and uc_spells live in
+    # <Character>-setup.yaml and never in a flex file, so the plain call is
+    # also the correct one on its own terms.
+    settings = get_settings
+
+    @character = UberCombat::Character.new
+    @zone_table = UberCombat::ZoneTable.from_game_data
+
+    # Constructed exactly as uc-leg.lic:87-97 does it, and for the same
+    # reasons documented there: the picker needs the account tier (a profile
+    # value, so there is nothing to build it with until settings are in hand)
+    # and leaving the argument off silently gates a premium character out of
+    # the zones they paid for.
+    @picker = UberCombat::ZonePicker.new(@character, @zone_table,
+                                         UberCombat::LegSettings.premium(settings),
+                                         province: UberCombat::LegSettings.in_province_only(settings))
+    @overlay_engine = UberCombat::LegOverlay.new(
+      @character,
+      UberCombat::LegSettings.weapons(settings),
+      uc_spells: UberCombat::LegSettings.spells(settings),
+      known_spell_names: UberCombat::LegSettings.known_spell_names(get_data('spells'))
+    )
+
+    @abort_detail = nil
+    # Presentation memory only. The core never reads these back; they exist so
+    # that the :stopped report can name WHY a run ended without the core
+    # having to carry the itinerary and the refusal map through its own return
+    # shape (spec 6.5 requires both to be printed).
+    @last_itinerary = nil
+    @last_stop = nil
+    @refusals = {}
+  end
+
+  # ---------------------------------------------------------------- clock
+
+  # Only ever used for elapsed arithmetic, never memoised.
+  def now
+    Time.now
+  end
+
+  # ------------------------------------------------------------ lifecycle
+
+  # THE ONLY PAUSE-HONOURING CALL IN THE WHOLE LOOP (correction C3).
+  #
+  # 41b Q1 claimed a paused script blocks at "most global defs (echo, fput,
+  # pause, waitfor, ...)". Two of those are wrong and they are the two a
+  # director would otherwise be built out of: `pause` (global_defs.rb:1399-1409)
+  # is a bare sleep with suffix parsing and never calls Script.current, and
+  # DRC.message reaches _respond (global_defs.rb:1825) which does not either.
+  # The enforcement point is
+  # `sleep 0.2 while script.paused? and not script.ignore_pause` INSIDE
+  # Script.current (script.rb:1026). A loop made of pause, DRC.message,
+  # Script.run_child and pure Ruby therefore honours `;p uc-director` NOWHERE.
+  #
+  # So the checkpoint is explicit, and it is one bare Script.current at the top
+  # of every cycle. Note what it does NOT do: a pause issued mid-stint does not
+  # suspend run_child's join (Script#join waits on a ConditionVariable and never
+  # routes through Script.current, script.rb:1892-1921), so the stint still ends
+  # on its own deadline and the pause takes effect here, one cycle later.
+  def checkpoint
+    Script.current
+    nil
+  end
+
+  # The safety floor, run at the top of every cycle BEFORE the leg is chosen
+  # (spec 7.1). Shape copied verbatim from uc-probe.lic:372-380; the values
+  # are not (see HEALTH_FLOOR above).
+  #
+  # Every read here is a cached class-variable or XML read with no game
+  # command, which is what makes it cheap enough to run every cycle.
+  # DRCH.check_health is deliberately excluded for the reason
+  # uc-probe.lic:365-368 gives: it issues a live `health` command.
+  #
+  # checkbleeding is in the probe's ladder and is deliberately NOT in this
+  # one. Bleeding after a hunt is routine, it is tended in stride, and
+  # hunting-buddy already ends its own hunt on it
+  # (hunting-buddy.lic:590-594, stop_hunting_if_bleeding: true in base.yaml).
+  # A hard director abort on bleeding would end most runs one stint in.
+  #
+  # :budget_spent is not here either: the budget is loop state, not a world
+  # condition, and the core's own `while productive < budget` owns it.
+  def abort_reason
+    return note(:dead) if dead?
+    return note(:health, DRStats.health) if DRStats.health < HEALTH_FLOOR
+    return note(:spirit, DRStats.spirit) if DRStats.spirit < SPIRIT_FLOOR
+
+    nil
+  end
+
+  # --------------------------------------------------------------- picker
+
+  def build_itinerary
+    @last_itinerary = @picker.build_itinerary
+  end
+
+  # ------------------------------------------------------------- overlay
+
+  # May raise ArgumentError on an unknown stance policy
+  # (uc_leg_overlay.rb:283) or a priority defence outside VALID_PRIORITY_DEFENSES
+  # (:300-302). Both are invariant guards that should never fire, and the core
+  # rescues them into a :overlay_error stop rather than letting them kill the
+  # script after a leg was already selected (spec 6.1, 6.2).
+  def overlay_for(leg, duration:)
+    @overlay_engine.build(leg, duration: duration)
+  end
+
+  # THE ONE ABSOLUTE PATH this script ever targets, derived verbatim from
+  # uc-leg.lic:327 through SetupFiles' own private resolution rather than
+  # hardcoded, so it cannot drift from what get_settings(['uc']) inside
+  # hunting-buddy will actually read. $setupfiles is the process-wide instance
+  # every get_settings / get_data call already goes through
+  # (global_defs.rb:68).
+  #
+  # Memoised because it cannot change while the script runs and because
+  # uc-leg.lic:311-326 insists there be exactly one place a target path is
+  # computed. There is deliberately no CLI argument anywhere in this file that
+  # can override or extend it: the only value `run` accepts from a person is a
+  # stint COUNT.
+  def overlay_path
+    @overlay_path ||= File.join($setupfiles.send(:scripts_profiles_path),
+                                $setupfiles.send(:to_character_filename, 'uc'))
+  end
+
+  # LegWriter.read_first_line is private_class_method (uc_leg_writer.rb:134),
+  # so the adapter performs this read itself and hands the result to the
+  # public, pure LegWriter.decide. Needed only by plan mode, which uses it to
+  # PREDICT a :gaps or :foreign_file refusal without writing a byte.
+  #
+  # An existing-but-empty file reads back "", which is neither nil nor MARKER
+  # and therefore correctly predicts :foreign_file (uc_leg_writer.rb:87-89).
+  def existing_first_line
+    return nil unless File.exist?(overlay_path)
+
+    File.open(overlay_path, 'r') { |handle| handle.gets }
+  end
+
+  # Returns a LegWriter::Result. A refusal is a first-class return, never an
+  # exception (uc_leg_writer.rb:65-72). A REAL I/O failure inside the atomic
+  # write does raise (:165-172) and this method lets it propagate: the core
+  # rescues it into a :write_error stop.
+  def write_overlay(overlay)
+    UberCombat::LegWriter.write(overlay, overlay_path)
+  end
+
+  # Called only from before_dying. Never deletes a foreign file: the marker
+  # check is the same byte-for-byte comparison LegWriter itself makes before
+  # overwriting (uc_leg_writer.rb:112, MARKER at :40). Idempotent, one
+  # filesystem call, and it swallows its own errors because a teardown path
+  # must never raise.
+  def remove_overlay
+    return false unless File.exist?(overlay_path)
+    return false unless existing_first_line == UberCombat::LegWriter::MARKER
+
+    File.delete(overlay_path)
+    true
+  rescue StandardError
+    false
+  end
+
+  # -------------------------------------------------------------- tracker
+
+  # One tracker per leg. The core replaces it whenever the leg changes or the
+  # itinerary is rebuilt -- README rule 6: LegTracker owns no cadence, so it
+  # must never be handed one.
+  #
+  # leg[:zone_key] is a String (uc_zone_table.rb:158-159), which is what
+  # ZoneTable#zone is keyed on.
+  def tracker_for(leg)
+    UberCombat::LegTracker.new(
+      @character,
+      zone: @zone_table.zone(leg[:zone_key]),
+      skills: leg[:skills]
+    )
+  end
+
+  # Both reads are cached XML with no command cost (uc_character.rb:90-92,
+  # :104-106), which is why the core can afford to re-snapshot immediately
+  # after the pause checkpoint rather than trusting a value read before a
+  # pause that may have lasted an hour (spec 7.2, requirement 2).
+  def snapshot(skills)
+    skills.to_h do |skill|
+      [skill, { rank: @character.rank_of(skill), mindstate: @character.mindstate_of(skill) }]
+    end
+  end
+
+  # ---------------------------------------------------------------- stint
+
+  # ONE bounded hunting-buddy stint. See the header for why run_child and not
+  # DRC.wait_for_script_to_complete.
+  #
+  # $HUNTING_BUDDY IS CLEARED FIRST, AND THAT IS NOT HYGIENE -- IT IS THE
+  # WHOLE BASIS OF THE MEASUREMENT. The global is assigned at
+  # hunting-buddy.lic:729, AFTER HuntingBuddy.new returns. If the constructor
+  # raises -- and it does, with "no implicit conversion of nil into Array"
+  # from @hunting_info += infos (:122) whenever the merged profile has no
+  # hunting_info -- the assignment never happens and the global still holds
+  # the object from the PREVIOUS run in this Lich process, complete with that
+  # run's hunt_stop_reason. Nothing else clears it: hunting-buddy's
+  # before_dying does not, and Lich's teardown clears only per-Script state.
+  #
+  # THE OBJECT IS TESTED, NOT THE REASON. NilClass#method_missing is patched to
+  # return nil (nilclass.rb:9-11), so $HUNTING_BUDDY.hunt_stop_reason on a nil
+  # global returns nil SILENTLY -- indistinguishable from a real nil reason and
+  # from a typo'd accessor name. `&.` buys nothing here. Only holder.nil?
+  # separates them.
+  #
+  # A non-nil reason is proof the hunt loop actually ran, because
+  # @hunt_stop_reason is assigned only inside `hunt`, at hunting-buddy.lic:576
+  # and below. That is a claim about control flow, not about why the hunt
+  # stopped, and it is the only use the classifier makes of it.
+  def run_stint(timeout)
+    $HUNTING_BUDDY = nil
+    child = Script.run_child('hunting-buddy', ['uc'], timeout: timeout)
+    launch(:completed,
+           completed_successfully: child.completed_successfully?,
+           exit_error: child.exit_error)
+  rescue Script::StartError
+    # start_child returned nil: the file is missing, Lich is shutting down,
+    # construction failed, or -- the important one -- hunting-buddy is ALREADY
+    # RUNNING (script.rb:136, __begin_start returning :duplicate at :747).
+    # None of those is fixed by retrying, so the core stops the run.
+    launch(:start_error)
+  rescue Script::TimeoutError
+    # join returned nil, then kill_sync ran, THEN the raise. The doc comment
+    # guarantees that ordering (script.rb:987-989), so no unsupervised child
+    # survives this. hunting-buddy's own before_dying still stopped
+    # combat-trainer on the way out (:707-718, run inside __run_kill_cleanup).
+    #
+    # What a timeout does NOT do is walk the character home: the
+    # DRCT.walk_to(safe_room) at hunting-buddy.lic:273 is in main, after the
+    # loop, and a killed script never reaches it. D1 leaves the character
+    # standing in the zone -- the next cycle's abort_reason runs before
+    # anything else and the next stint does its own travel. Open question (j).
+    launch(:timeout)
+  rescue StandardError => e
+    launch(:error, exit_error: e)
+  end
+
+  # -------------------------------------------------------------- recovery
+
+  # Only ever called by the core, and only for a SAFETY stop
+  # (Director.safety_stop?). A spent budget is the ordinary end of a bounded
+  # run and must not walk the character across the continent.
+  #
+  # Wrapped in rescue StandardError for uc-probe.lic:693-696's reason, which
+  # applies here word for word: never let the recovery path be the thing that
+  # kills the run's report.
+  #
+  # NEVER fput('exit'). hunting-buddy.lic:585-589 sends the game command
+  # `exit` on low health, logging the character out, with no break after it.
+  # The director's ladder is: stop the child, gosafe under a timeout, report,
+  # stop -- leaving the character parked and still logged in.
+  def recover(reason)
+    DRC.message(format('-- Safety stop (%s): running gosafe --', reason))
+    Script.run_child('gosafe', timeout: GOSAFE_TIMEOUT)
+    DRC.message('  gosafe finished.', false)
+    nil
+  rescue StandardError => e
+    DRC.message(format('  gosafe did not complete (%s: %s). Recover by hand.', e.class, e.message))
+    nil
+  end
+
+  # ---------------------------------------------------------- presentation
+
+  # ONE method rather than a family, so the fake in the spec is a single
+  # recorder (spec 3.3). The core never reads anything back from it.
+  #
+  # The signature accepts the payload either as keywords -- which is how the
+  # core's `announce(:verdict, leg_index: i, ...)` call sites read -- or as an
+  # explicit Hash, so neither calling convention can break the adapter.
+  def announce(event, payload = {}, **extra)
+    data = payload.merge(extra)
+    case event
+    when :plan then render_plan(data)
+    when :leg_selected then render_leg_selected(data)
+    when :leg_refused then render_leg_refused(data)
+    when :leg_skipped then render_leg_skipped(data)
+    when :stint_ended then render_stint_ended(data)
+    when :verdict then render_verdict(data)
+    when :stopped then render_stopped(data)
+    else
+      DRC.message(format('uc-director: unhandled event %s %s', event, data.inspect))
+    end
+    nil
+  end
+
+  # One stint as a single line. A class method because ;uc-director report
+  # renders the same rows from the recorded run, and the two must never
+  # disagree about what a stint looked like.
+  def self.stint_line(stint)
+    format('  leg %-3d %-24s %-16s %6.0fs stop=%-14s outcome=%s',
+           stint.leg_index.to_i + 1,
+           stint.leg.is_a?(Hash) ? stint.leg[:zone_key] : '?',
+           stint.classification,
+           stint.elapsed.to_f,
+           stint.stop_reason || 'none',
+           stint.outcome)
+  end
+
+  # The rank and mindstate movement the classifier actually measured. This is
+  # the data open questions (e) and (f) are answered from -- MIN_PRODUCTIVE_STINT
+  # and BARREN_LIMIT are both unmeasured guesses today -- so it is printed on
+  # every stint rather than only on a surprising one.
+  def self.stint_deltas(stint)
+    skills = stint.leg.is_a?(Hash) ? Array(stint.leg[:skills]) : []
+    skills.map do |skill|
+      before = stint.before.is_a?(Hash) ? stint.before[skill] : nil
+      after = stint.after.is_a?(Hash) ? stint.after[skill] : nil
+      next format('    %-18s (not measured)', skill) if before.nil? || after.nil?
+
+      format('    %-18s rank %8.1f to %8.1f   mind %2d to %2d',
+             skill, before[:rank].to_f, after[:rank].to_f,
+             before[:mindstate].to_i, after[:mindstate].to_i)
+    end
+  end
+
+  private
+
+  def note(reason, value = nil)
+    @abort_detail = value
+    reason
+  end
+
+  def launch(outcome, completed_successfully: false, exit_error: nil)
+    holder = $HUNTING_BUDDY
+    Launch.new(outcome: outcome,
+               stop_reason: holder.nil? ? nil : holder.hunt_stop_reason,
+               completed_successfully: completed_successfully,
+               exit_error: exit_error)
+  end
+
+  # ------------------------------------------------------- event renderers
+
+  # Plan mode's whole output except the safety floor, which UcDirector prints
+  # itself because it owns the floor's presentation on the refusal path too.
+  def render_plan(data)
+    render_itinerary(data[:itinerary])
+    leg = data[:leg]
+    return if leg.nil?
+
+    DRC.message(format('-- Leg %d is the leg `run` would take first --', data[:leg_index].to_i + 1))
+    DRC.message(format('  skills:       %s', Array(leg[:skills]).join(', ')), false)
+    DRC.message(format('  zone_key:     %s', leg[:zone_key]), false)
+    DRC.message(format('  stance:       policy=%s key=%s',
+                       leg[:stance][:policy], leg[:stance][:key]), false)
+    render_plan_overlay(data)
+    render_plan_launch(data)
+  end
+
+  def render_plan_overlay(data)
+    overlay = data[:overlay]
+    DRC.message('-- Overlay this leg would write --')
+    if overlay.nil?
+      DRC.message('  (overlay could not be built; see the error above)', false)
+      return
+    end
+
+    print_yaml(overlay.settings)
+    render_gaps(overlay.gaps)
+    DRC.message('-- Overlay file target --')
+    DRC.message("  #{data[:path]}", false)
+    render_predicted_decision(data[:decision])
+  end
+
+  # The PREDICTED write outcome, from the pure, public LegWriter.decide fed
+  # this file's real first line -- so plan mode reports :gaps or :foreign_file
+  # before a single byte is written anywhere.
+  def render_predicted_decision(decision)
+    if decision.nil?
+      DRC.message('  PREDICTED WRITE: unknown (no overlay to decide on)', false)
+      return
+    end
+
+    if decision.write
+      DRC.message('  PREDICTED WRITE: WOULD WRITE', false)
+      return
+    end
+
+    DRC.message(format('  PREDICTED WRITE: WOULD REFUSE (%s)', decision.reason), false)
+    return unless decision.reason == :foreign_file
+
+    DRC.message('  A file already exists at this path and carries no uc-leg marker line.', false)
+    DRC.message('  Every leg targets that one path, so this refusal stops the WHOLE run.', false)
+    DRC.message('  Remove or rename it by hand first.', false)
+  end
+
+  def render_plan_launch(data)
+    DRC.message('-- The stint `run` would launch --')
+    DRC.message(format("  Script.run_child('hunting-buddy', ['uc'], timeout: %d)", data[:timeout].to_i), false)
+    DRC.message(format('  duration: %d minutes, written into the overlay as the :duration: key', data[:duration].to_i), false)
+    DRC.message(format('  timeout:  %d seconds (duration plus the slack)', data[:timeout].to_i), false)
+    DRC.message('  Nothing below this line has run. This mode issues no game command.', false)
+  end
+
+  # Verbatim presentation from uc-leg.lic:233-249, which is itself verbatim
+  # from uc-zones.lic, so all three diagnostics report the same itinerary the
+  # same way and can never appear to disagree about what the picker returned.
+  def render_itinerary(itinerary)
+    DRC.message('-- Itinerary (build_itinerary) --')
+    if itinerary.nil? || itinerary.legs.empty?
+      DRC.message('  (no legs)', false)
+      render_unplaced(itinerary&.unplaced)
+      return
+    end
+
+    itinerary.legs.each_with_index do |leg, index|
+      DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
+      DRC.message(format('    zone=%-24s stance=%-12s', leg[:zone_key], leg[:stance][:policy]), false)
+    end
+    render_unplaced(itinerary.unplaced)
+    render_unresolved_premium(itinerary.unresolved_premium)
+  end
+
+  # README rule 3: a skill that gets no zone is reported with a reason. A
+  # silent cap reads as full coverage. The reason is a closed set
+  # (uc_zone_picker.rb:240-254) and each value names a different fix.
+  def render_unplaced(records)
+    return if records.nil? || records.empty?
+
+    DRC.message('  -- Skills with no leg --', false)
+    records.each do |record|
+      DRC.message(format('    %-18s reason=%-22s %s', record[:skill], record[:reason], record[:detail]), false)
+    end
+  end
+
+  # The premium gate falls OPEN on a zone nobody has annotated yet
+  # (uc_zone_picker.rb:84-86). That is only defensible while every unknown an
+  # actual leg leans on gets named, which is what this prints.
+  def render_unresolved_premium(records)
+    return if records.nil? || records.empty?
+
+    DRC.message('  -- Premium status unknown for these leg zones --', false)
+    records.each do |record|
+      DRC.message(format('    %-24s skills=%s', record[:zone_key], record[:detail][:skills].join(', ')), false)
+    end
+    DRC.message('    If a stint cannot travel to one of these, it is premium only.', false)
+  end
+
+  def render_leg_selected(data)
+    DRC.message(format('***STATUS*** uc-director: leg %d of %d -- %s',
+                       data[:leg_index].to_i + 1, data[:count].to_i,
+                       Array(data[:leg][:skills]).join(', ')))
+    DRC.message(format('  zone=%s  duration=%d min  timeout=%d s',
+                       data[:leg][:zone_key], data[:duration].to_i, data[:timeout].to_i), false)
+  end
+
+  # A :gaps refusal takes this leg out for the rest of the run: retrying
+  # without a profile edit refuses identically. The gap records are what a
+  # person actually acts on, so they are printed rather than counted.
+  def render_leg_refused(data)
+    index = data[:leg_index].to_i
+    @refusals[index] = data[:reason]
+    DRC.message(format('***STATUS*** uc-director: leg %d refused (%s) -- skipping it for this run',
+                       index + 1, data[:reason]))
+    render_gaps(data[:gaps] || [])
+  end
+
+  # A skipped leg is a real, actionable finding, so it names the leg, its zone
+  # and whether that zone was riding an unchecked premium flag (spec 6.3).
+  def render_leg_skipped(data)
+    index = data[:leg_index].to_i
+    @refusals[index] = :failed_to_hunt
+    leg = data[:leg]
+    DRC.message(format('***STATUS*** uc-director: leg %d skipped after %d consecutive failed stint(s)',
+                       index + 1, data[:failures].to_i))
+    DRC.message(format('  skills=%s  zone=%s', Array(leg[:skills]).join(', '), leg[:zone_key]), false)
+    return unless unresolved_premium?(leg[:zone_key])
+
+    DRC.message('  That zone has an UNCHECKED premium flag, which is a likely cause:', false)
+    DRC.message('  a non-premium character cannot travel there at all.', false)
+  end
+
+  def render_stint_ended(data)
+    stint = data[:stint]
+    DRC.message(format('***STATUS*** uc-director: stint ended -- %s', stint.classification))
+    DRC.message(DirectorWorld.stint_line(stint), false)
+    DirectorWorld.stint_deltas(stint).each { |line| DRC.message(line, false) }
+    return unless stint.stop_reason.nil?
+
+    # nil means "we cannot tell whether it hunted", never "advance the leg".
+    # Eleven paths in hunting-buddy exit with no reason set (correction C7),
+    # including a Kernel exit at :386 that Lich records as a SUCCESSFUL exit --
+    # byte-for-byte indistinguishable from a clean stint by the Script handle
+    # alone. Only the measurement above separates them.
+    DRC.message('  No stop reason was set, so the hunt loop may never have run.', false)
+    DRC.message('  Classification above came from elapsed time and skill movement only.', false)
+  end
+
+  def render_verdict(data)
+    verdict = data[:verdict]
+    reason = verdict.respond_to?(:reason) ? verdict.reason : nil
+    status = verdict.respond_to?(:status) ? verdict.status : verdict
+    DRC.message(format('  tracker=%s%s  decision=%s',
+                       status, reason ? format(' (%s)', reason) : '', data[:decision]), false)
+  end
+
+  # The one report every run ends with. It names the reason, and for the
+  # reasons that need a human to do something it says what.
+  def render_stopped(data)
+    stints = Array(data[:stints])
+    @last_stop = { reason: data[:reason], detail: data[:detail] || @abort_detail, stints: stints }
+    DRC.message(format('***STATUS*** uc-director: STOPPED -- %s%s', data[:reason],
+                       @last_stop[:detail] ? format(' (%s)', @last_stop[:detail]) : ''))
+    render_tally(stints)
+    render_stop_advice(data[:reason])
+  end
+
+  def render_tally(stints)
+    DRC.message(format('  stints run: %d', stints.size), false)
+    productive = stints.count { |stint| stint.classification == :productive }
+    DRC.message(format('  productive: %d', productive), false)
+    stints.group_by(&:classification).sort_by { |name, _| name.to_s }.each do |name, list|
+      DRC.message(format('    %-16s %3d', name, list.size), false)
+    end
+  end
+
+  def render_stop_advice(reason)
+    case reason
+    when :no_legs
+      DRC.message('  The picker returned no legs at all. The reasons are listed above:', false)
+      DRC.message('  each unplaced skill names the FIRST stage that emptied its zone set.', false)
+      render_unplaced(@last_itinerary&.unplaced)
+    when :all_legs_refused
+      render_refusal_table
+    when :launch_refused
+      DRC.message('  Script.run_child could not start hunting-buddy. Check, in this order:', false)
+      DRC.message('    1. hunting-buddy is ALREADY RUNNING (something else is driving this character)', false)
+      DRC.message('    2. hunting-buddy.lic is missing from the scripts directory', false)
+      DRC.message('    3. Lich is shutting down', false)
+      DRC.message('  None of those is fixed by retrying, which is why the run stopped instead.', false)
+    when :foreign_file
+      DRC.message("  A file at #{overlay_path} was not generated by this suite.", false)
+      DRC.message('  Every leg targets that one path, so no leg can run until it is moved.', false)
+    when :write_error
+      DRC.message("  Writing #{overlay_path} raised. Check the directory is writable and has space.", false)
+    when :overlay_error
+      DRC.message('  The overlay engine raised ArgumentError. That is an invariant guard', false)
+      DRC.message('  (an unknown stance policy or priority defence) and it is a bug, not a setting.', false)
+    end
+  end
+
+  def render_refusal_table
+    DRC.message('  Every leg in the itinerary was refused. Per leg:', false)
+    legs = @last_itinerary ? @last_itinerary.legs : []
+    legs.each_with_index do |leg, index|
+      DRC.message(format('    Leg %-3d %-24s %s', index + 1, leg[:zone_key],
+                         @refusals[index] || 'refused'), false)
+    end
+  end
+
+  def render_gaps(gaps)
+    if gaps.nil? || gaps.empty?
+      DRC.message('  -- Gaps: none --', false)
+      return
+    end
+
+    DRC.message('  -- Gaps: this leg cannot be written --', false)
+    gaps.each do |gap|
+      DRC.message(format('    %-16s reason=%-20s %s', gap[:skill], gap[:reason], gap[:detail]), false)
+    end
+  end
+
+  def unresolved_premium?(zone_key)
+    records = @last_itinerary&.unresolved_premium
+    return false if records.nil?
+
+    records.any? { |record| record[:zone_key] == zone_key }
+  end
+
+  # DRC.message takes one line at a time -- it has no multi-line contract of
+  # its own, unlike Lich::Messaging.mono -- so the dump is split here rather
+  # than handed over with embedded newlines. The '...' terminator is
+  # uc-leg.lic:290-296's and it earns its place: without it the next line sits
+  # at the same indent and reads as one more YAML key.
+  def print_yaml(settings)
+    settings.to_yaml.each_line { |line| DRC.message(line.chomp, false) }
+    DRC.message('...', false)
+  end
+end
+
+# Owns the three modes, the banner, the preflight refusals and the run
+# record. No decision logic -- every verdict, every classification and the
+# whole loop belong to UberCombat::Director (lib/uc_director.rb).
+class UcDirector
+  # ;uc-director report has to survive the script that produced the run
+  # exiting, and D1 persists NOTHING (spec 7.3), so the record lives in a
+  # process-lifetime global. It outlives the script and dies with Lich, which
+  # is exactly the "in-memory only in D1" the spec asks for. It is
+  # deliberately NOT CharSettings: persistence across a restart is D4's job
+  # and writing a half-designed shape now is what D4 would have to undo.
+  #
+  # $UC_DIRECTOR is the ;e control handle, mirroring t2.lic:249-251. This is a
+  # SECOND global because before_dying clears that handle, and a report that
+  # vanished the moment the run finished would be no report at all.
+
+  # Reachable through $UC_DIRECTOR for ;e inspection while a run is going.
+  attr_reader :world
+
+  def initialize
+    @world = nil
+  end
+
+  # PLAN ONLY. Issues no game command, walks nowhere, launches nothing, and
+  # writes no file. The one filesystem call is a READ of the overlay path's
+  # first line, so that a :foreign_file refusal is predicted here instead of
+  # discovered halfway through a run.
+  def plan
+    banner
+    world = DirectorWorld.new
+    itinerary = world.build_itinerary
+    leg = itinerary.legs.first
+    world.announce(:plan, plan_payload(world, itinerary, leg))
+    report_floor(world)
+  end
+
+  def run(budget)
+    banner
+    world = DirectorWorld.new
+    @world = world
+    return unless preflight(world)
+
+    # Registered only in this mode. before_dying in plan mode would give a
+    # read-only script a teardown that deletes a file.
+    #
+    # WHAT IS IN HERE IS THE WHOLE LIST (spec 7.1): remove the overlay we
+    # wrote, drop the control handle. No walk_to, no gosafe, no bput, no
+    # start_script, no unbounded loop. gosafe CANNOT live here -- once
+    # @@shutdown_started is set, __begin_start returns :shutdown and the
+    # launcher answers "cannot start X while shutting down" (script.rb:743,
+    # :132-135) -- and it must not on time grounds either: a shutdown kill
+    # runs at_exit procs INLINE under a ~20 second drain and a 60 second
+    # Process.exit!(1) watchdog.
+    #
+    # Stopping the hunt is not in the list either. run_child made it a
+    # registered child, so __stop_children (script.rb:2052, :2288-2310) tears
+    # it down on any kill, and during shutdown the process-wide drain owns
+    # every script.
+    before_dying do
+      world.remove_overlay
+      $UC_DIRECTOR = nil
+    end
+    $UC_DIRECTOR = self
+
+    DRC.message(format('-- Hunting: budget %d PRODUCTIVE stint(s) --', budget))
+    DRC.message('  A stint that never reached the hunt loop does not spend the budget.', false)
+    DRC.message('  ;p uc-director takes effect at the next cycle, not mid-stint.', false)
+
+    UberCombat::Director::Session.new(world).run(budget)
+    record_run(world)
+  end
+
+  # The last run in this Lich process. D1 keeps no history: one run, replaced
+  # by the next.
+  def report
+    run_record = $UC_DIRECTOR_LAST_RUN
+    DRC.message('=== uc-director: last run ===')
+    if run_record.nil?
+      DRC.message('  No run has finished in this Lich session.', false)
+      DRC.message('  Nothing is persisted in D1, so a restart clears this.', false)
+      return
+    end
+
+    DRC.message(format('  stopped: %s%s', run_record[:reason],
+                       run_record[:detail] ? format(' (%s)', run_record[:detail]) : ''), false)
+    stints = Array(run_record[:stints])
+    if stints.empty?
+      DRC.message('  No stints ran.', false)
+      return
+    end
+
+    stints.each do |stint|
+      DRC.message(DirectorWorld.stint_line(stint), false)
+      DirectorWorld.stint_deltas(stint).each { |line| DRC.message(line, false) }
+    end
+  end
+
+  private
+
+  # Deliberately builds NOTHING. An earlier draft printed the leg count here
+  # and paid for it with a second build_itinerary call: the picker is stateless
+  # and reads live skills (uc_zone_picker.rb:6-10), so two calls are two
+  # answers, and a banner that disagrees with the itinerary printed under it is
+  # worse than a banner with one less number on it.
+  def banner
+    duration = UberCombat::Director::DURATION_MINUTES
+    DRC.message(format('=== uc-director: %s, duration=%d min, timeout=%d s, health floor %d ===',
+                       XMLData.name, duration,
+                       UberCombat::Director.timeout_for(duration),
+                       DirectorWorld::HEALTH_FLOOR))
+  end
+
+  # Everything plan mode needs, gathered without writing anything. The overlay
+  # build is rescued because ArgumentError out of LegOverlay is a real (if
+  # invariant-guard) possibility and a plan that crashed would tell a person
+  # less than one that named the error.
+  def plan_payload(world, itinerary, leg)
+    duration = UberCombat::Director::DURATION_MINUTES
+    payload = { itinerary: itinerary, leg_index: 0, leg: leg, duration: duration,
+                timeout: UberCombat::Director.timeout_for(duration),
+                overlay: nil, decision: nil, path: world.overlay_path }
+    return payload if leg.nil?
+
+    begin
+      overlay = world.overlay_for(leg, duration: duration)
+      payload[:overlay] = overlay
+      payload[:decision] = UberCombat::LegWriter.decide(overlay, world.existing_first_line)
+    rescue ArgumentError => e
+      DRC.message(format('uc-director: the overlay engine raised %s: %s', e.class, e.message))
+    end
+    payload
+  end
+
+  # The abort ladder runs before the first stint anyway, so without this a
+  # character who is already hurt would "start" a run, hunt nothing, and then
+  # be walked to the saferoom by the recovery path -- which looks like a
+  # malfunction rather than a refusal. Same reasoning as uc-probe.lic:497-505.
+  def preflight(world)
+    reason = world.abort_reason
+    if reason
+      detail = world.abort_detail ? " (#{world.abort_detail})" : ''
+      DRC.message(format('uc-director: NOT starting -- %s%s.', reason, detail))
+      DRC.message('  A stint is half an hour of unattended combat. Heal up first.', false)
+      return false
+    end
+
+    return false unless hunt_free?
+
+    warn_about_foreign_overlay(world)
+    true
+  end
+
+  # DEVIATION, and a deliberate one: the spec has this case reaching the core
+  # as Script::StartError and stopping the run with :launch_refused (section
+  # 6.4). That works, but it costs an itinerary build and one overlay WRITE
+  # before it discovers a fact that was readable for free beforehand -- and
+  # "hunting-buddy is already running" means something other than the director
+  # is driving this character, so writing its profile overlay out from under
+  # it is exactly the wrong move. The :launch_refused path stays intact for
+  # every other cause and for a hunt that starts between here and the stint.
+  def hunt_free?
+    return true unless Script.running?('hunting-buddy')
+
+    DRC.message('uc-director: NOT starting -- hunting-buddy is already running.')
+    DRC.message('  Something else is driving this character. Stop it first, then re-run.', false)
+    false
+  end
+
+  # A foreign file at the overlay path stops the WHOLE run at the first write
+  # (spec 6.1), because every leg targets that one path. Saying so before the
+  # run starts costs one file read.
+  def warn_about_foreign_overlay(world)
+    first_line = world.existing_first_line
+    return if first_line.nil? || first_line == UberCombat::LegWriter::MARKER
+
+    DRC.message('uc-director: WARNING -- a file this suite did not generate sits at the overlay path.')
+    DRC.message("  #{world.overlay_path}", false)
+    DRC.message('  Every leg writes there, so the first write will refuse and stop the run.', false)
+  rescue StandardError => e
+    DRC.message(format('uc-director: could not read the overlay path (%s). Continuing.', e.class))
+  end
+
+  def report_floor(world)
+    DRC.message('-- Safety floor (checked before EVERY stint, never in a death handler) --')
+    DRC.message(format('  health floor %d, current %s', DirectorWorld::HEALTH_FLOOR, DRStats.health), false)
+    DRC.message(format('  spirit floor %d, current %s', DirectorWorld::SPIRIT_FLOOR, DRStats.spirit), false)
+    reason = world.abort_reason
+    DRC.message(format('  abort_reason right now: %s%s', reason || 'none',
+                       world.abort_detail ? format(' (%s)', world.abort_detail) : ''), false)
+    DRC.message('  Below the floor the director runs gosafe and stops. It never sends `exit`.', false)
+  end
+
+  # The world recorded the run as it rendered the :stopped announce, so this
+  # needs no cooperation at all from whatever shape Session#run returns. That
+  # is deliberate: the report survives a core that changes its return value.
+  def record_run(world)
+    return if world.last_stop.nil?
+
+    $UC_DIRECTOR_LAST_RUN = world.last_stop
+  end
+end
+
+# script is bound to Script.current by Lich's own script-launch eval
+# (script.rb:176). vars[1], vars[2] are the whitespace-split tokens
+# (script.rb:3098-3099). Same positional convention uc-leg.lic and
+# uc-probe.lic use.
+#
+# No argument is the read-only plan -- the case that must never change.
+mode = script.vars[1]
+
+case mode
+when nil
+  UcDirector.new.plan
+when /\Arun\z/i
+  budget = script.vars[2]
+  if budget.nil? || budget !~ /\A[1-9][0-9]*\z/
+    # Usage strings carry no angle brackets anywhere in this file. DRC.message
+    # sends its text down a channel that strips anything shaped like a tag, so
+    # a bracketed placeholder is silently deleted -- uc-probe's first live run
+    # printed a command with its argument missing for exactly this reason.
+    DRC.message('uc-director: run needs a positive stint budget. Usage: ;uc-director run N')
+    DRC.message('  There is no unbounded mode. One stint is half an hour of unattended combat.', false)
+  else
+    UcDirector.new.run(budget.to_i)
+  end
+when /\Areport\z/i
+  UcDirector.new.report
+else
+  DRC.message("uc-director: unknown argument '#{mode}'. Usage: ;uc-director | ;uc-director run N | ;uc-director report")
+end
