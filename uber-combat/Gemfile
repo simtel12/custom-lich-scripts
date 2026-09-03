@@ -6,4 +6,13 @@ source "https://rubygems.org"
 group :development do
   gem "rspec", "~> 3.13"
   gem "rubocop"
+
+  # ostruct stopped being a default gem in Ruby 4.0, so under bundler it is no
+  # longer requirable unless it is named here. The specs that pin down the
+  # get_data and get_settings key shapes build their fixtures out of
+  # OpenStruct on purpose -- that is the exact production shape the zone-table
+  # incident turned on -- so without this, those two spec files fail to load
+  # under "bundle exec rspec" and the suite silently loses its only coverage
+  # of that hazard.
+  gem "ostruct"
 end
