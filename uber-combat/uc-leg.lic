@@ -1,19 +1,37 @@
 # frozen_string_literal: true
 
 =begin
-  uc-leg: read-only diagnostic for the uber-combat leg-overlay mapper.
+  uc-leg: diagnostic AND overlay writer for the uber-combat leg-overlay mapper.
 
-  Builds the current character's live UberCombat::Character and
-  UberCombat::ZoneTable, asks UberCombat::ZonePicker for its itinerary (same
-  call as uc-zones.lic), then for EACH leg runs it through
-  UberCombat::LegOverlay to print the exact YAML that leg's profile overlay
-  would contain, the launch line a person would type to run it, and that
-  leg's gap report. Issues no game command and writes no file -- rules 1 and
-  2 in custom-scripts/uber-combat/README.md ("Rules that this code obeys"),
-  and the same read-only-first discipline uc-zones.lic already used to catch
-  two real bugs before anything could act on them. Saving the overlay to
-  disk is a later packet, gated on a human running this script in game
-  first.
+  With no argument, this is a read-only diagnostic. Builds the current
+  character's live UberCombat::Character and UberCombat::ZoneTable, asks
+  UberCombat::ZonePicker for its itinerary (same call as uc-zones.lic), then
+  for EACH leg runs it through UberCombat::LegOverlay to print the exact YAML
+  that leg's profile overlay would contain, the launch line a person would
+  type to run it, and that leg's gap report. Issues no game command and
+  writes no file -- rules 1 and 2 in
+  custom-scripts/uber-combat/README.md ("Rules that this code obeys"), and
+  the same read-only-first discipline uc-zones.lic already used to catch two
+  real bugs before anything could act on them. This default behaviour is
+  UNCHANGED from the read-only-only version of this script -- it is the
+  proven path and it is what a person runs by habit.
+
+  Two additional arguments turn this from diagnostic into actor, always for
+  ONE leg at a time, chosen by number from the SAME itinerary the report
+  above prints (leg numbers are 1-based, matching the "Leg N" headers the
+  default report already prints):
+
+    ;uc-leg write <n>   -- writes leg <n>'s overlay to disk. Does not launch.
+    ;uc-leg go <n>       -- writes leg <n>'s overlay, then launches the hunt.
+
+  Both delegate the actual write decision to UberCombat::LegWriter
+  (lib/uc_leg_writer.rb), which refuses a leg with ANY gap and refuses to
+  overwrite a file it did not itself generate -- see that file's header
+  comment for the full safety rationale. This script's own job in both modes
+  is unchanged from the read-only path except for the write/launch calls
+  themselves: it still derives the same live character, zone table, picker
+  and overlay engine set up in #initialize below, and reuses ALL of it -- no
+  second copy of that setup exists anywhere in this file.
 
   Reads two Lich-facing inputs LegOverlay does not read itself (it is pure --
   see lib/uc_leg_overlay.rb's header comment): the uc_weapons / uc_spells
@@ -27,6 +45,8 @@
 
   Examples:
     ;uc-leg
+    ;uc-leg write 1
+    ;uc-leg go 1
 =end
 
 # load (not require): edits to the uber-combat lib take effect without
@@ -37,6 +57,7 @@ load File.join(lib_dir, 'uc_zone_table.rb')
 load File.join(lib_dir, 'uc_zone_picker.rb')
 load File.join(lib_dir, 'uc_leg_overlay.rb')
 load File.join(lib_dir, 'uc_leg_settings.rb')
+load File.join(lib_dir, 'uc_leg_writer.rb')
 
 require 'yaml'
 
@@ -48,7 +69,6 @@ class UcLegReport
   def initialize
     @character = UberCombat::Character.new
     @zone_table = UberCombat::ZoneTable.from_game_data
-    @picker = UberCombat::ZonePicker.new(@character, @zone_table)
 
     # get_settings with no flex suffix: always ['setup'] only
     # (setup_files.rb:77, "['setup', character_suffixes]"). uc_weapons and
@@ -58,9 +78,18 @@ class UcLegReport
     # merge in a stale <Character>-uc.yaml left over from a previous run of
     # the (not yet written) disk-writing component, if one exists on disk.
     settings = get_settings
-    uc_weapons = UberCombat::LegSettings.uc_weapons(settings)
-    uc_spells = UberCombat::LegSettings.uc_spells(settings)
+    warn_about_legacy_keys(settings)
+    uc_weapons = UberCombat::LegSettings.weapons(settings)
+    uc_spells = UberCombat::LegSettings.spells(settings)
     known_spell_names = UberCombat::LegSettings.known_spell_names(get_data('spells'))
+
+    # The picker is built AFTER get_settings on purpose. It needs the account
+    # tier, and that is a profile value, so there is nothing to construct it
+    # with until the settings are in hand. Leaving the argument off does not
+    # fail: it defaults to false and silently gates a premium character out of
+    # the zones they paid for (uc_zone_picker.rb#initialize).
+    @picker = UberCombat::ZonePicker.new(@character, @zone_table,
+                                         UberCombat::LegSettings.premium(settings))
 
     @overlay_engine = UberCombat::LegOverlay.new(@character, uc_weapons,
                                                  uc_spells: uc_spells,
@@ -82,7 +111,120 @@ class UcLegReport
     report_gap_summary(all_gaps)
   end
 
+  # ;uc-leg write <n> and ;uc-leg go <n> both land here. leg_arg is whatever
+  # string script.vars handed the argument parser -- validated below before
+  # it is trusted as a leg index, never used until it is. Resolves the SAME
+  # itinerary #run itself would print (built fresh, per Character/ZoneTable's
+  # own "always live, never a snapshot" rule -- uc_character.rb:6-8), so a
+  # leg written here always matches what a person last saw the default
+  # report say about that leg number.
+  #
+  # launch: true starts the hunt via start_script -- see #launch_hunt for why
+  # that call, specifically, and why it only ever runs after a successful
+  # write.
+  def write_leg(leg_arg, launch: false)
+    itinerary = @picker.build_itinerary
+    leg_number = parse_leg_number(leg_arg, itinerary.legs.size)
+    return unless leg_number
+
+    leg = itinerary.legs[leg_number - 1]
+    overlay = @overlay_engine.build(leg)
+
+    DRC.message(format('-- Leg %d overlay (zone=%s) --', leg_number, leg[:zone_key]))
+    report_gaps(overlay.gaps)
+
+    # Rule 5 (the brief): print the full path and the outcome on EVERY
+    # attempt, success or refusal -- LegWriter.write never writes, and this
+    # method never launches, silently.
+    result = UberCombat::LegWriter.write(overlay, target_path)
+    report_write_result(result)
+
+    launch_hunt if launch && result.written
+  end
+
   private
+
+  # Every uber-combat setting now lives under one uc_settings: key. A profile
+  # left half-migrated fails SILENTLY and its symptom looks like a real
+  # answer: uc_settings is absent, so the weapons catalogue reads as empty and
+  # EVERY leg skill reports :no_weapon_entry -- which is indistinguishable
+  # from "this character has no catalogue yet". One line naming the old key
+  # turns that confusing gap report into an obvious cause.
+  def warn_about_legacy_keys(settings)
+    legacy = UberCombat::LegSettings.legacy_keys(settings)
+    return if legacy.empty?
+
+    DRC.message(format('uc-leg: WARNING -- %s still set at the top level of your setup file.',
+                       legacy.join(' and ')))
+    DRC.message('  These moved under uc_settings: (weapons: and spells:). The old keys are ignored.')
+  end
+
+  # leg_count: itinerary.legs.size for the itinerary just built -- always
+  # freshly computed by the caller, never cached, so this bound can never go
+  # stale between the report and the write.
+  #
+  # Returns the validated 1-based leg number, or nil (after printing exactly
+  # why) if leg_arg is missing, not a plain positive integer, or out of
+  # range. nil is the caller's signal to stop -- #write_leg never reaches
+  # LegWriter with an unvalidated index.
+  def parse_leg_number(leg_arg, leg_count)
+    if leg_arg.nil?
+      DRC.message('uc-leg: missing leg number. Usage: ;uc-leg write <n>  or  ;uc-leg go <n>')
+      return nil
+    end
+
+    unless leg_arg =~ /\A[1-9][0-9]*\z/
+      DRC.message("uc-leg: leg number must be a positive integer, got #{leg_arg.inspect}")
+      return nil
+    end
+
+    leg_number = leg_arg.to_i
+    unless (1..leg_count).cover?(leg_number)
+      DRC.message("uc-leg: leg #{leg_number} does not exist -- the current itinerary has #{leg_count} leg(s)")
+      return nil
+    end
+
+    leg_number
+  end
+
+  # Starts the hunt the same way hunting-buddy's own flex-file convention
+  # already reads it (contract Q1/Q9: 'uc' is the flex suffix, so
+  # get_settings(['uc']) inside hunting-buddy.lic reads exactly the file
+  # LegWriter just wrote). start_script wraps Script.start
+  # (lich-5/lib/global_defs.rb:19-24, "Script.start(script_name,
+  # cli_vars.join(' '), flags)") and returns immediately -- it does NOT block
+  # until hunting-buddy finishes, matching how dr-scripts itself launches
+  # hunting-buddy from coordinator.lic:253 ("start_script('hunting-buddy',
+  # [file])") and how hunting-buddy.lic:568 launches combat-trainer the same
+  # non-blocking way. This script exits right after issuing the call; the
+  # hunt keeps running as its own script.
+  def launch_hunt
+    DRC.message('-- Launching hunt --')
+    DRC.message('  start_script(\'hunting-buddy\', [\'uc\'])  (non-blocking; this script exits now)', false)
+    start_script('hunting-buddy', ['uc'])
+  end
+
+  # Prints the path and the outcome for a write attempt -- the "never write
+  # silently" rule applies to refusals just as much as to a success; a
+  # refusal a person doesn't see is a leg that silently never advances.
+  def report_write_result(result)
+    DRC.message('-- Overlay write --')
+    DRC.message("  path: #{result.path}", false)
+    if result.written
+      DRC.message('  OUTCOME: WRITTEN', false)
+      return
+    end
+
+    DRC.message("  OUTCOME: REFUSED (#{result.reason})", false)
+    case result.reason
+    when :gaps
+      DRC.message('  Fix the gap(s) reported above, then retry.', false)
+    when :foreign_file
+      DRC.message('  A file already exists at this path and was NOT generated by uc-leg.', false)
+      DRC.message('  It carries no uc-leg marker line, so it is left untouched.', false)
+      DRC.message('  Remove or rename it by hand before uc-leg can manage this path.', false)
+    end
+  end
 
   # Verbatim from uc-zones.lic's own report_itinerary -- same itinerary, same
   # presentation, so the two diagnostics never disagree about what the
@@ -101,6 +243,25 @@ class UcLegReport
                          leg[:zone_key], stance[:policy],
                          @character.stance_order(stance[:policy]).join(' > ')), false)
     end
+
+    report_unresolved_premium(itinerary.unresolved_premium)
+  end
+
+  # The premium gate falls OPEN on a zone nobody has annotated yet, because
+  # closing it would empty a 363-zone table while the harvest is incomplete
+  # (uc_zone_picker.rb#premium_locked?). That choice is only defensible while
+  # every unknown an actual leg leans on gets named here. Print nothing and a
+  # non-premium character walks to a guard, gets turned back, and reads no
+  # reason for it anywhere.
+  def report_unresolved_premium(records)
+    return if records.nil? || records.empty?
+
+    DRC.message('  -- Premium status unknown for these leg zones --', false)
+    records.each do |record|
+      DRC.message(format('    %-24s skills=%s', record[:zone_key],
+                         record[:detail][:skills].join(', ')), false)
+    end
+    DRC.message('    If a hunt cannot travel to one of these, it is premium only.', false)
   end
 
   # Returns this leg's gaps, tagged with the leg number, so the closing
@@ -145,18 +306,29 @@ class UcLegReport
     end
   end
 
-  # The one absolute path the (not yet written) disk writer would write to.
-  # Derived at runtime through SetupFiles' own private resolution
-  # (scripts_profiles_path, to_character_filename) rather than hardcoded, so
-  # this line never drifts from contract Q9's actual answer if the
-  # game-instance-specific branch there (setup_files.rb:157-160) ever starts
-  # applying on this install. $setupfiles is the process-wide global instance
-  # every get_settings / get_data call already goes through
-  # (global_defs.rb:68).
+  # The one absolute path this script ever targets, for both the read-only
+  # report and an actual write. Derived at runtime through SetupFiles' own
+  # private resolution (scripts_profiles_path, to_character_filename) rather
+  # than hardcoded, so this line never drifts from contract Q9's actual
+  # answer if the game-instance-specific branch there
+  # (setup_files.rb:157-160) ever starts applying on this install.
+  # $setupfiles is the process-wide global instance every get_settings /
+  # get_data call already goes through (global_defs.rb:68).
+  #
+  # This is the ONLY place a target path is computed anywhere in this
+  # script or in UberCombat::LegWriter -- the writer takes whatever path it
+  # is given and neither hardcodes nor re-derives one itself (see that
+  # file's header comment). There is deliberately no argument anywhere in
+  # this script's CLI parsing that can override or extend this path: the
+  # only value ;uc-leg write/go ever accepts from a person is a leg NUMBER
+  # (#parse_leg_number), never a path or a filename fragment.
+  def target_path
+    File.join($setupfiles.send(:scripts_profiles_path), $setupfiles.send(:to_character_filename, 'uc'))
+  end
+
   def report_target_path
-    path = File.join($setupfiles.send(:scripts_profiles_path), $setupfiles.send(:to_character_filename, 'uc'))
     DRC.message('-- Overlay file target (NOT written by this script) --')
-    DRC.message("  #{path}", false)
+    DRC.message("  #{target_path}", false)
   end
 
   def report_gap_summary(all_gaps)
@@ -174,4 +346,31 @@ class UcLegReport
   end
 end
 
-UcLegReport.new.run
+# script is bound to Script.current by Lich's own script-launch eval
+# (lich-5/lib/common/script.rb:176, "eval('script = Script.current',
+# script_binding, script.name)") -- the same mechanism every dr-scripts CLI
+# parser below relies on, not a name this file invents. vars[0] is the whole
+# joined argument string; vars[1], vars[2], ... are the individual
+# whitespace-split tokens (lich-5/lib/common/script.rb:3098-3099,
+# "cli_vars.each_index { |idx| @vars[idx + 1] = cli_vars[idx] }"). This is
+# the plain positional-arg convention used throughout dr-scripts/scripts for
+# a script that is not a flex-settings consumer itself (script.vars[1] /
+# script.vars[2] checks: scripts/scripts/autostart.lic:379-425,
+# scripts/scripts/alchemy.lic:2687-2696) -- uc-zones.lic takes no arguments
+# at all, so there is no sibling convention in THIS project to match instead.
+#
+# No argument (script.vars.empty?) is the untouched read-only path -- the
+# case that must never change. 'write' and 'go' are matched
+# case-insensitively, the same style as the autostart.lic citation above.
+mode = script.vars[1]
+
+case mode
+when nil
+  UcLegReport.new.run
+when /\Awrite\z/i
+  UcLegReport.new.write_leg(script.vars[2])
+when /\Ago\z/i
+  UcLegReport.new.write_leg(script.vars[2], launch: true)
+else
+  DRC.message("uc-leg: unknown argument '#{mode}'. Usage: ;uc-leg | ;uc-leg write <n> | ;uc-leg go <n>")
+end

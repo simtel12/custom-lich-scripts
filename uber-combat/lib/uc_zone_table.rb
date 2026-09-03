@@ -42,6 +42,32 @@ module UberCombat
       data["allow_low_confidence_auto_select"] == true
     end
 
+    # THREE-STATE, and it must stay that way. true is "known premium-only",
+    # false is "known open to every account", nil is "nobody has checked yet"
+    # -- either premium: null or no premium: key at all. nil is NOT false: the
+    # picker admits an unknown zone and reports it (ZonePicker#premium_locked?
+    # and #unresolved_premium_records), so collapsing nil to false here would
+    # silently retire the report that is the only thing shrinking the unknown
+    # list. Same missing-key-versus-false distinction low_confidence? and
+    # allow_low_confidence_auto_select? already draw above, for the same
+    # reason.
+    #
+    # Indexed with a String because this key is NESTED. get_data's OpenStruct
+    # symbolises the TOP LEVEL only (see ZoneTable#initialize), so in
+    # production every key at this depth is still a String. data[:premium]
+    # would read nil for all 363 zones -- the fail-open direction, which means
+    # it would never raise and never be noticed.
+    def premium
+      data["premium"]
+    end
+
+    # Unknown premium status, the state most of the table is in until the
+    # harvest passes fill it in. Kept as its own predicate so callers ask the
+    # question instead of re-deriving it from premium.nil?.
+    def premium_unknown?
+      premium.nil?
+    end
+
     def critter_refs
       data["critter_refs"] || {}
     end

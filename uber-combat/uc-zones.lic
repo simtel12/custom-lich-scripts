@@ -28,6 +28,7 @@ lib_dir = File.join(SCRIPT_DIR, 'custom', 'lib')
 load File.join(lib_dir, 'uc_character.rb')
 load File.join(lib_dir, 'uc_zone_table.rb')
 load File.join(lib_dir, 'uc_zone_picker.rb')
+load File.join(lib_dir, 'uc_leg_settings.rb')
 
 # Owns only presentation. All picker logic stays in the uber-combat lib; this
 # class formats what the lib already computed and adds distance, which the
@@ -38,7 +39,13 @@ class UcZonesReport
   def initialize
     @character = UberCombat::Character.new
     @zone_table = UberCombat::ZoneTable.from_game_data
-    @picker = UberCombat::ZonePicker.new(@character, @zone_table)
+
+    # Same reason uc-leg.lic reads it: the premium gate needs the account
+    # tier, and only the profile carries it. This diagnostic must agree with
+    # uc-leg, or a zone listed as a candidate here goes missing from the
+    # itinerary there with nothing to explain the difference.
+    @picker = UberCombat::ZonePicker.new(@character, @zone_table,
+                                         UberCombat::LegSettings.premium(get_settings))
   end
 
   def run

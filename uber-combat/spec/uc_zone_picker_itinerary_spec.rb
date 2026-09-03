@@ -22,11 +22,11 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
 
   let(:open_zone) { UberCombat::Zone.new("anywhere", { "rank" => { "min" => 0, "max" => 1000 } }) }
 
-  def picker_with(zones, skills = {})
+  def picker_with(zones, skills = {}, premium = false)
     character = UberCombat::Character.new(
       FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
     )
-    described_class.new(character, FakeZoneTable.new(zones))
+    described_class.new(character, FakeZoneTable.new(zones), premium)
   end
 
   describe "#build_legs, width-bounded clustering" do
@@ -245,6 +245,89 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
       itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
 
       expect(itinerary.unplaced.map { |row| row[:skill] }).not_to include("Slings")
+    end
+  end
+
+  # Both directions of the premium gate, at the itinerary level: the hard
+  # exclusion has to name itself in the same reason channel the other
+  # exclusions use, and the fail-open admission has to name itself too.
+  describe "#build_itinerary and the premium gate" do
+    def band(extra = {})
+      { "rank" => { "min" => 140, "max" => 150 } }.merge(extra)
+    end
+
+    let(:gated) { UberCombat::Zone.new("gated", band("premium" => true)) }
+    let(:open_zone) { UberCombat::Zone.new("open", band("premium" => false)) }
+    let(:unknown) { UberCombat::Zone.new("unknown", band) }
+
+    it "reports a skill blocked only by the premium gate" do
+      itinerary = picker_with([gated], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs).to be_empty
+      expect(itinerary.unplaced).to contain_exactly(
+        hash_including(skill: "Small Edged", reason: :premium_excluded)
+      )
+    end
+
+    # The reason names the first stage that emptied the set, so a skill whose
+    # only zone is BOTH low-confidence and premium reads as the confidence
+    # problem -- one actionable cause per record.
+    it "keeps the confidence exclusion ahead of the premium one" do
+      both = UberCombat::Zone.new("both", band("rank_confidence" => "low", "premium" => true))
+
+      itinerary = picker_with([both], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.unplaced).to contain_exactly(
+        hash_including(skill: "Small Edged", reason: :confidence_excluded)
+      )
+    end
+
+    it "gives the same zone to a premium character with no exclusion at all" do
+      itinerary = picker_with([gated], { "Small Edged" => 148 }, true).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["gated"])
+      expect(itinerary.unplaced).to be_empty
+    end
+
+    # Fail open, then say so. The admission is deliberate; the report is what
+    # turns the unknown into a known one on the next harvest pass.
+    it "admits a zone of unknown premium status and reports it as unresolved" do
+      itinerary = picker_with([unknown], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["unknown"])
+      expect(itinerary.unresolved_premium).to contain_exactly(
+        hash_including(zone_key: "unknown", reason: :premium_unknown,
+                       detail: { skills: ["Small Edged"] })
+      )
+    end
+
+    it "stays silent about a zone known not to be premium" do
+      itinerary = picker_with([open_zone], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["open"])
+      expect(itinerary.unresolved_premium).to be_empty
+    end
+
+    # A premium account hides the consequence of an unknown, not the missing
+    # datum. The harvest still wants it.
+    it "reports an unresolved zone for a premium character too" do
+      itinerary = picker_with([unknown], { "Small Edged" => 148 }, true).build_itinerary
+
+      expect(itinerary.unresolved_premium).to contain_exactly(
+        hash_including(zone_key: "unknown", reason: :premium_unknown)
+      )
+    end
+
+    # The report is scoped to the zones the itinerary will actually travel to.
+    # An unknown zone nothing is routed to is a data statistic, not a hunt
+    # about to fail.
+    it "reports only the unknown zones the itinerary actually selected" do
+      elsewhere = UberCombat::Zone.new("elsewhere", { "rank" => { "min" => 300, "max" => 400 } })
+
+      itinerary = picker_with([open_zone, elsewhere], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["open"])
+      expect(itinerary.unresolved_premium).to be_empty
     end
   end
 end

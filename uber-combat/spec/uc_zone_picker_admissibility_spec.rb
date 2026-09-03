@@ -17,8 +17,8 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
       .merge(attributes[:extra] || {}))
   end
 
-  def picker(zones)
-    described_class.new(character, FakeZoneTable.new(zones))
+  def picker(zones, premium = false)
+    described_class.new(character, FakeZoneTable.new(zones), premium)
   end
 
   describe "the band test" do
@@ -102,6 +102,44 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
     end
   end
 
+  # A premium-only zone cannot be travelled to by a non-premium character at
+  # all, so admitting one produces a leg that never starts.
+  describe "the premium account exclusion" do
+    let(:premium_zone) { zone(min: 100, max: 190, extra: { "premium" => true }) }
+    let(:open_zone) { zone(min: 100, max: 190, extra: { "premium" => false }) }
+    let(:unknown_zone) { zone(min: 100, max: 190) }
+
+    it "refuses a premium zone the skill otherwise fits, for a non-premium character" do
+      expect(picker([premium_zone]).admissible?(premium_zone, "Small Edged")).to be(false)
+      expect(picker([premium_zone]).premium_locked?(premium_zone)).to be(true)
+    end
+
+    it "admits that same zone for a premium character" do
+      expect(picker([premium_zone], true).admissible?(premium_zone, "Small Edged")).to be(true)
+      expect(picker([premium_zone], true).premium_locked?(premium_zone)).to be(false)
+    end
+
+    # Fail open on purpose. Most of a 363-zone table is unknown on the first
+    # harvest pass, so excluding unknowns would leave almost nothing to hunt.
+    it "admits a zone whose premium status is unknown" do
+      expect(picker([unknown_zone]).admissible?(unknown_zone, "Small Edged")).to be(true)
+      expect(picker([unknown_zone]).premium_locked?(unknown_zone)).to be(false)
+    end
+
+    it "admits a zone known not to be premium, gating nothing" do
+      expect(picker([open_zone]).admissible?(open_zone, "Small Edged")).to be(true)
+      expect(picker([open_zone]).premium_locked?(open_zone)).to be(false)
+    end
+
+    # Defaulting the constructor argument must gate, never unlock: a caller
+    # that has not been taught the argument is a non-premium character.
+    it "defaults an unspecified account to non-premium" do
+      unspecified = described_class.new(character, FakeZoneTable.new([premium_zone]))
+
+      expect(unspecified.admissible?(premium_zone, "Small Edged")).to be(false)
+    end
+  end
+
   describe "#admissible_zones_for" do
     it "returns only the zones that pass every test" do
       good = zone(key: "good", min: 100, max: 190)
@@ -111,6 +149,17 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
       result = picker([good, too_high, unsurvivable]).admissible_zones_for("Small Edged")
 
       expect(result.map(&:key)).to eq(["good"])
+    end
+
+    it "drops the premium zones for a non-premium character and keeps them for a premium one" do
+      open_zone = zone(key: "open", min: 100, max: 190, extra: { "premium" => false })
+      gated = zone(key: "gated", min: 100, max: 190, extra: { "premium" => true })
+      unknown = zone(key: "unknown", min: 100, max: 190)
+
+      expect(picker([open_zone, gated, unknown]).admissible_zones_for("Small Edged").map(&:key))
+        .to contain_exactly("open", "unknown")
+      expect(picker([open_zone, gated, unknown], true).admissible_zones_for("Small Edged").map(&:key))
+        .to contain_exactly("open", "gated", "unknown")
     end
   end
 end

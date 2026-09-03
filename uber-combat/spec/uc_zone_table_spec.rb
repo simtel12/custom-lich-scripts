@@ -71,6 +71,46 @@ RSpec.describe UberCombat::ZoneTable do
     end
   end
 
+  # premium: is three-state -- true, false, and nil for "nobody has checked
+  # yet". Built through the get_data shape rather than through .load, because
+  # the reader has to survive the exact hazard described just above: the key
+  # is NESTED, so it stays a String in production while the top level does
+  # not. A reader spelled data[:premium] passes any test that only asserts
+  # nil-means-unknown, and fails open for the whole table in game.
+  describe "Zone#premium" do
+    def zone_with(entry)
+      parsed = { "zones" => { "gated" => { "rank" => { "min" => 10, "max" => 20 } }.merge(entry) } }
+
+      described_class.new(OpenStruct.new(parsed).to_h).zone("gated")
+    end
+
+    it "reads true for a zone known to be premium-only" do
+      expect(zone_with("premium" => true).premium).to be(true)
+    end
+
+    it "reads false for a zone known to be open to every account" do
+      expect(zone_with("premium" => false).premium).to be(false)
+    end
+
+    it "reads nil for an explicit premium: null" do
+      expect(zone_with("premium" => nil).premium).to be_nil
+    end
+
+    it "reads nil when the key is absent entirely" do
+      expect(zone_with({}).premium).to be_nil
+    end
+
+    # The distinction the picker's fail-open rule is built on. Collapsing nil
+    # to false here would make an unchecked zone indistinguishable from a
+    # checked one and retire the unresolved report with it.
+    it "never collapses an unknown into a known false" do
+      expect(zone_with({}).premium_unknown?).to be(true)
+      expect(zone_with("premium" => nil).premium_unknown?).to be(true)
+      expect(zone_with("premium" => false).premium_unknown?).to be(false)
+      expect(zone_with("premium" => true).premium_unknown?).to be(false)
+    end
+  end
+
   describe ".from_game_data" do
     it "refuses an empty table instead of reporting zero candidates" do
       allow(described_class).to receive(:fetch_game_data).and_return({})

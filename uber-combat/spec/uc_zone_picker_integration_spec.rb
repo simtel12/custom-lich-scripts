@@ -66,9 +66,23 @@ RSpec.describe UberCombat::ZonePicker, "against the committed zone table" do
   end
 
   it "gives every unplaced skill a reason from the known set" do
-    known = [:no_band_in_range, :confidence_excluded, :defense_ceiling, :no_carrier]
+    known = [:no_band_in_range, :confidence_excluded, :premium_excluded, :defense_ceiling, :no_carrier]
 
     expect(itinerary.unplaced.map { |row| row[:reason] }).to all(be_in(known))
+  end
+
+  # The default account is non-premium, so no leg may be routed to a zone the
+  # data knows is premium-only. Zones with an unknown status are admitted on
+  # purpose and are covered by the unresolved report instead.
+  it "never selects a known premium zone for a non-premium character" do
+    expect(itinerary.legs.map { |leg| table.zone(leg[:zone_key]).premium }).to all(satisfy { |v| v != true })
+  end
+
+  it "names every selected zone whose premium status is still unknown" do
+    unknown_keys = itinerary.legs.map { |leg| leg[:zone_key] }
+                            .select { |key| table.zone(key).premium_unknown? }
+
+    expect(itinerary.unresolved_premium.map { |row| row[:zone_key] }).to match_array(unknown_keys)
   end
 
   it "never puts Debilitation at the head of a leg" do

@@ -1,8 +1,14 @@
 # frozen_string_literal: true
 
-# Normalises the two Lich-settings inputs uc-leg.lic hands to
-# UberCombat::LegOverlay: the uc_weapons / uc_spells catalogue read off
+# Normalises the Lich-settings inputs uc-leg.lic hands to
+# UberCombat::LegOverlay: the uc_settings catalogue block read off
 # get_settings, and the canonical spell-name list read off get_data('spells').
+#
+# Every uber-combat setting lives under ONE top-level uc_settings: key, so that
+# each new setting does not claim a top-level name of its own. That is also the
+# home for settings this project has already identified but not yet built --
+# uc_gain_check (LegTracker::DEFAULT_GAIN_CHECK today) and the wrapper's own
+# hunting-mode preference (the Q26 residual).
 #
 # ONE place, per the same rule uc_zone_table.rb#initialize follows for its own
 # top-level keys. That precedent is not hypothetical: get_data returns an
@@ -39,16 +45,34 @@
 # is the one place that will fail first.
 module UberCombat
   module LegSettings
+    # The pre-consolidation top-level keys. Every uber-combat setting now
+    # lives under the single uc_settings: key instead, so that new ones never
+    # each claim a top-level name. See .legacy_keys for why these are still
+    # named here.
+    LEGACY_KEYS = [:uc_weapons, :uc_spells].freeze
+
     # settings: an OpenStruct, exactly get_settings's return value.
     #
-    # nil means the character's -setup.yaml carries no uc_weapons: key at
+    # THE NESTED VALUE KEEPS STRING KEYS. Verified against the real
+    # pipeline: OpenStruct#to_h symbolises the key it wraps and NOTHING
+    # below it, so settings.uc_settings is a Hash whose own keys are
+    # "weapons" and "spells" as Strings. Indexing it with :weapons reads nil
+    # -- silently, and every skill then reports as a gap, which reads exactly
+    # like a character with no catalogue. This is the same failure that
+    # emptied the zone table in game while every test passed
+    # (uc_zone_table.rb:100-101).
+    def self.uc_settings(settings)
+      settings.uc_settings || {}
+    end
+
+    # nil means the character's -setup.yaml carries no weapons catalogue at
     # all. LegOverlay#build_weapon_training calls @uc_weapons.key?(skill)
     # unconditionally (uc_leg_overlay.rb:190), which raises NoMethodError on
     # nil -- {} is the correct "no catalogue" value instead: every leg skill
     # then reports :no_weapon_entry, which is exactly the "report, never
     # silently skip" behaviour this diagnostic exists to surface.
-    def self.uc_weapons(settings)
-      settings.uc_weapons || {}
+    def self.weapons(settings)
+      uc_settings(settings)["weapons"] || {}
     end
 
     # nil is a legitimate, DIFFERENT-meaning value to LegOverlay itself
@@ -59,8 +83,47 @@ module UberCombat
     # today, but it is not the same claim, and manufacturing one out of nil
     # here would erase the distinction the moment that guard's condition
     # ever changes. Pass nil through as nil.
-    def self.uc_spells(settings)
-      settings.uc_spells
+    def self.spells(settings)
+      uc_settings(settings)["spells"]
+    end
+
+    # Whether this character's account can reach premium-only hunting zones.
+    #
+    # DEFAULTS TO FALSE, in three separate absences: no uc_settings: block at
+    # all, no premium: key inside it, and premium: null. A character is
+    # non-premium unless the profile says otherwise.
+    #
+    # False is the safe default because its failure mode is the cheap one. A
+    # non-premium character defaulted to false loses at most the premium zones
+    # from an otherwise full table -- it UNDER-selects. Defaulting to true
+    # would route a non-premium character to a zone they cannot travel to, and
+    # that hunt fails silently, which is the exact failure this gate was added
+    # to stop. Under-selection costs a zone; over-selection costs the hunt.
+    #
+    # == true rather than truthiness, so a hand-edited "premium: yes" (a
+    # String, not the YAML boolean) reads as non-premium instead of unlocking
+    # the premium table off a typo. Same direction as the default.
+    #
+    # Same String-key contract as .weapons above: the value under uc_settings
+    # is a plain Hash whose own keys OpenStruct never symbolised, so
+    # ["premium"] is the only spelling that reads it (uc_zone_table.rb:100-101
+    # for the production incident that pins this down).
+    def self.premium(settings)
+      uc_settings(settings)["premium"] == true
+    end
+
+    # Names of the OLD top-level keys a profile still carries. The caller
+    # prints these as a warning.
+    #
+    # This exists because a half-migrated profile fails SILENTLY and its
+    # symptom is indistinguishable from a real answer: with uc_settings
+    # absent, .weapons returns {} and every single leg skill reports
+    # :no_weapon_entry -- which reads exactly like "this character has no
+    # catalogue yet" rather than "you moved the keys and missed one". The
+    # legacy names are cheap to look for and they turn a confusing gap report
+    # into one line naming the actual cause.
+    def self.legacy_keys(settings)
+      LEGACY_KEYS.select { |key| !settings[key].nil? }
     end
 
     # data: an OpenStruct, exactly get_data('spells')'s return value.
