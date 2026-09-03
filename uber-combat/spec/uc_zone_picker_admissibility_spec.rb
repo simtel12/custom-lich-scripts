@@ -17,8 +17,57 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
       .merge(attributes[:extra] || {}))
   end
 
-  def picker(zones, premium = false)
-    described_class.new(character, FakeZoneTable.new(zones), premium)
+  def picker(zones, premium = false, province: nil)
+    described_class.new(character, FakeZoneTable.new(zones), premium, province: province)
+  end
+
+  # Keeps a hunt near its home town instead of sending it somewhere wildly
+  # distant that merely fits the rank band.
+  describe "the province limit" do
+    it "admits any province when none is set" do
+      target = zone(min: 100, max: 190, extra: { "province" => "Forfedhdar" })
+
+      expect(picker([target]).admissible?(target, "Small Edged")).to be(true)
+    end
+
+    it "admits a zone in the chosen province" do
+      target = zone(min: 100, max: 190, extra: { "province" => "Zoluren" })
+
+      expect(picker([target], province: "Zoluren").admissible?(target, "Small Edged")).to be(true)
+    end
+
+    it "refuses a zone in another province" do
+      target = zone(min: 100, max: 190, extra: { "province" => "Forfedhdar" })
+
+      expect(picker([target], province: "Zoluren").admissible?(target, "Small Edged")).to be(false)
+    end
+
+    # Qi'Reshalia is the one name nobody types the same way twice, and a
+    # strict compare would silently admit nothing rather than complain.
+    it "ignores case and punctuation when comparing province names" do
+      target = zone(min: 100, max: 190, extra: { "province" => "Qi'Reshalia" })
+
+      expect(picker([target], province: "qi reshalia").admissible?(target, "Small Edged")).to be(true)
+    end
+
+    # Excluding is the safe direction: the setting exists to stay near home,
+    # and a zone with no province recorded cannot promise that.
+    it "refuses a zone with no province recorded once a limit is set" do
+      target = zone(min: 100, max: 190)
+
+      expect(picker([target], province: "Zoluren").admissible?(target, "Small Edged")).to be(false)
+    end
+
+    # Reached through build_itinerary rather than by calling the private
+    # exclusion_record directly, which is how a caller actually sees it.
+    it "names province_excluded when the limit is what emptied the list" do
+      target = zone(min: 100, max: 190, extra: { "province" => "Forfedhdar" })
+      unplaced = picker([target], province: "Zoluren").build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:reason]).to eq(:province_excluded)
+      expect(record[:detail][:zones_after_province]).to eq(0)
+    end
   end
 
   describe "the band test" do

@@ -89,8 +89,8 @@ RSpec.describe UberCombat::Probe do
   # a defence is supplied (see the band filter examples below).
   # premium defaults to nil, which is "nobody has checked yet" -- the state
   # the probe exists to change, and so the state most of these examples want.
-  def zone(key, access: "plain", min: nil, max: nil, premium: nil)
-    UberCombat::Zone.new(key, { "access" => access, "premium" => premium,
+  def zone(key, access: "plain", min: nil, max: nil, premium: nil, province: nil)
+    UberCombat::Zone.new(key, { "access" => access, "premium" => premium, "province" => province,
                                 "rank" => { "min" => min, "max" => max } })
   end
 
@@ -165,6 +165,43 @@ RSpec.describe UberCombat::Probe do
         partition = described_class.partition([known], ->(_key) { [900] }, defence: 68)
 
         expect(partition.answered).to eq([known])
+        expect(partition.out_of_band).to be_empty
+      end
+    end
+
+    context "with a province limit" do
+      it "holds back a zone outside the chosen province" do
+        away = zone("dusk_ogres", min: 0, max: 30, province: "Forfedhdar")
+        partition = described_class.partition([away], ->(_key) { [900] }, province: "Zoluren")
+
+        expect(partition.out_of_province).to eq([away])
+        expect(partition.probeable).to be_empty
+      end
+
+      it "keeps a zone inside it" do
+        home = zone("louts", min: 0, max: 35, province: "Zoluren")
+        partition = described_class.partition([home], ->(_key) { [690] }, province: "Zoluren")
+
+        expect(partition.probeable).to eq([home])
+      end
+
+      it "admits every province when no limit is set" do
+        away = zone("dusk_ogres", min: 0, max: 30, province: "Forfedhdar")
+        partition = described_class.partition([away], ->(_key) { [900] })
+
+        expect(partition.probeable).to eq([away])
+        expect(partition.out_of_province).to be_empty
+      end
+
+      # The province is the hunter's own statement about where they will go.
+      # A zone ruled out on those grounds must not ALSO be weighed for
+      # danger, or the report suggests a stronger character could have it.
+      it "prefers out_of_province over out_of_band when both apply" do
+        away = zone("bone_wyverns", min: 1500, max: 1750, province: "Forfedhdar")
+        partition = described_class.partition([away], ->(_key) { [900] },
+                                              defence: 68, province: "Zoluren")
+
+        expect(partition.out_of_province).to eq([away])
         expect(partition.out_of_band).to be_empty
       end
     end

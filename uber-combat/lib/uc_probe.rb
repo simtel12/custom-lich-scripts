@@ -84,7 +84,11 @@ module UberCombat
     #     DEFERRED rather than settled: the caller must not record them, and
     #     a later run by a stronger character reconsiders them.
     # probeable is everything else: a real candidate for .rank and a walk.
-    Partition = Struct.new(:probeable, :escort, :no_tag, :answered, :out_of_band, keyword_init: true)
+    #   out_of_province -- outside the province the hunter chose to stay in.
+    #     A preference, not a capability, so like answered and out_of_band
+    #     these are skipped and never recorded.
+    Partition = Struct.new(:probeable, :escort, :no_tag, :answered, :out_of_province, :out_of_band,
+                           keyword_init: true)
 
     # One iteration's answer to "what does the character walk to next."
     # next_zone/rooms are nil together when nothing priced is reachable.
@@ -100,6 +104,11 @@ module UberCombat
     #   a hardcoded Map.rooms_by_tag call, so this stays testable with a
     #   plain Hash-backed double and no Lich runtime.
     # defence: the character's defensive metric, or nil for no band filter.
+    # province: the province to stay inside, or nil for no limit. Checked
+    #   BEFORE the band, because it is the hunter's explicit statement of
+    #   where they are willing to go -- a zone they ruled out on those
+    #   grounds should not also be weighed for danger, and reporting it as
+    #   too dangerous would suggest a stronger character could have it.
     #
     # WHY A ZONE WITH A KNOWN premium IS NOT PROBED (user, after two live
     # runs). The probe exists to turn `premium: null` into an answer. A zone
@@ -134,11 +143,12 @@ module UberCombat
     # permanent facts about the zone; this one is a fact about the character
     # and expires as they train. Ordering it last keeps a zone that can
     # never be walked to from being filed as merely deferred.
-    def self.partition(zones, rooms_for_tag, defence: nil)
+    def self.partition(zones, rooms_for_tag, defence: nil, province: nil)
       probeable = []
       escort = []
       no_tag = []
       answered = []
+      out_of_province = []
       out_of_band = []
 
       zones.each do |zone|
@@ -148,6 +158,8 @@ module UberCombat
           no_tag << zone
         elsif !zone.premium_unknown?
           answered << zone
+        elsif !zone.in_province?(province)
+          out_of_province << zone
         elsif !survivable?(zone, defence)
           out_of_band << zone
         else
@@ -155,8 +167,8 @@ module UberCombat
         end
       end
 
-      Partition.new(probeable: probeable, escort: escort, no_tag: no_tag,
-                    answered: answered, out_of_band: out_of_band)
+      Partition.new(probeable: probeable, escort: escort, no_tag: no_tag, answered: answered,
+                    out_of_province: out_of_province, out_of_band: out_of_band)
     end
 
     # A nil defence disables the filter entirely, which is what a caller with
@@ -366,7 +378,11 @@ module UberCombat
       #   known. Counted SEPARATELY from deferred because the two mean
       #   opposite things -- "nothing left to learn" against "could not go
       #   and learn it" -- and only the second is a gap in the data.
-      Outcome = Struct.new(:records, :aborted, :visited, :deferred, :answered, keyword_init: true)
+      # out_of_province: how many the province setting held back. A third
+      #   distinct meaning: the answer is missing and gettable, but the
+      #   hunter said not to go there.
+      Outcome = Struct.new(:records, :aborted, :visited, :deferred, :answered, :out_of_province,
+                           keyword_init: true)
 
       # zones: Array<Zone>, the full candidate set -- escort and untagged
       #   zones included. Partitioning them is this class's job (via
@@ -383,18 +399,20 @@ module UberCombat
       # defence: the character's defensive metric, or nil to probe every
       #   tagged zone regardless of danger. See Probe.partition for why a
       #   live run always passes one.
-      def initialize(zones, world, tier:, meta:, defence: nil)
+      def initialize(zones, world, tier:, meta:, defence: nil, province: nil)
         @zones = zones
         @world = world
         @tier = tier
         @meta = meta
         @defence = defence
+        @province = province
         @visited = 0
       end
 
       def run
         records = {}
-        partition = Probe.partition(@zones, @world.method(:rooms_for_tag), defence: @defence)
+        partition = Probe.partition(@zones, @world.method(:rooms_for_tag),
+                                    defence: @defence, province: @province)
 
         # Escort and untagged zones are the same fact stated two ways --
         # "there is nothing to walk to" -- so both are filed as :no_tag and
@@ -405,12 +423,14 @@ module UberCombat
           records[zone.key] = record_for(zone.key, "no_tag")
         end
 
-        # partition.out_of_band and partition.answered are pointedly NOT
-        # recorded here. Neither was observed: one the character cannot reach
-        # safely, the other nobody needs to. A record would claim an
-        # observation that never happened, and would also settle the zone
-        # permanently, because the caller subtracts everything already
-        # recorded from the next run's candidates.
+        # answered, out_of_province and out_of_band are pointedly NOT
+        # recorded here. None of the three was observed: nobody needs the
+        # first, the hunter ruled out the second, and the character cannot
+        # safely reach the third. A record would claim an observation that
+        # never happened, and would also settle the zone permanently,
+        # because the caller subtracts everything already recorded from the
+        # next run's candidates. All three can change -- a merge, a settings
+        # edit, or training -- and each must come back around when it does.
 
         probeable = partition.probeable
         aborted = nil
@@ -467,7 +487,8 @@ module UberCombat
         aborted ||= @world.abort_reason
 
         Outcome.new(records: records, aborted: aborted, visited: @visited,
-                    deferred: partition.out_of_band.size, answered: partition.answered.size)
+                    deferred: partition.out_of_band.size, answered: partition.answered.size,
+                    out_of_province: partition.out_of_province.size)
       end
 
       private

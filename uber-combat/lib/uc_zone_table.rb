@@ -84,6 +84,32 @@ module UberCombat
       data["province"]
     end
 
+    # Is this zone inside the named province? A nil or blank name means "no
+    # restriction", so everything matches -- the setting is opt-in and its
+    # absence must never narrow anything.
+    #
+    # Comparison is on letters and digits only, folded to lower case, so a
+    # person can write Qi'Reshalia, qi reshalia or QiReshalia and get the
+    # same answer. The apostrophe is the reason: it is the one province name
+    # nobody types the same way twice, and a strict compare would silently
+    # admit no zones at all rather than complain.
+    #
+    # A zone with no province recorded matches NOTHING once a restriction is
+    # set. All 363 rows carry one today, so this is a guard rather than a
+    # live case, and excluding is the safe direction: the whole point of the
+    # setting is to stay near home, and an unlabelled zone cannot promise
+    # that.
+    def in_province?(name)
+      return true if name.nil? || Zone.fold_province(name).empty?
+      return false if province.nil?
+
+      Zone.fold_province(province) == Zone.fold_province(name)
+    end
+
+    def self.fold_province(value)
+      value.to_s.downcase.gsub(/[^a-z0-9]/, "")
+    end
+
     private
 
     def band

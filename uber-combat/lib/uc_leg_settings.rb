@@ -112,6 +112,23 @@ module UberCombat
       uc_settings(settings)["premium"] == true
     end
 
+    # The province the character wants to stay inside, or nil for no limit.
+    # Keeps a hunt near its home town instead of sending it somewhere wildly
+    # distant that happens to fit the rank band.
+    #
+    # Unlike `premium`, this is NOT coerced to a boolean, because the value
+    # IS the answer: any non-empty string names a province and nil means no
+    # restriction. An empty or blank string is treated as nil rather than as
+    # a province no zone can match, which would silently admit nothing at
+    # all -- the same fail-loud-or-fail-open choice the premium gate makes.
+    def self.in_province_only(settings)
+      value = uc_settings(settings)["in_province_only"]
+      return nil unless value.is_a?(String)
+
+      trimmed = value.strip
+      trimmed.empty? ? nil : trimmed
+    end
+
     # Names of the OLD top-level keys a profile still carries. The caller
     # prints these as a warning.
     #

@@ -30,10 +30,15 @@ module UberCombat
     # gates conservatively. The wrong default in the other direction unlocks
     # the premium zones for every non-premium character silently, which is the
     # failure this whole gate exists to prevent.
-    def initialize(character, zone_table, premium = false)
+    # province: the name of the province to stay inside, or nil for no
+    # limit. Keyword rather than a third positional, because `premium`
+    # already occupies that slot and a bare second boolean-looking argument
+    # at a call site would be unreadable.
+    def initialize(character, zone_table, premium = false, province: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
+      @province = province
     end
 
     # The cheapest stance policy that survives the zone, or nil when neither
@@ -49,6 +54,7 @@ module UberCombat
       return false unless zone.closed_band?
       return false if zone.low_confidence? && !zone.allow_low_confidence_auto_select?
       return false if premium_locked?(zone)
+      return false if out_of_province?(zone)
 
       rank = @character.rank_of(skill)
       return false unless zone.rank_min <= rank && rank <= zone.rank_max
@@ -77,6 +83,13 @@ module UberCombat
     # itinerary's :premium_excluded reason gives.
     def premium_locked?(zone)
       zone.premium == true && @premium != true
+    end
+
+    # Out of the province the character chose to hunt in. A preference, not
+    # a capability: the zone is perfectly usable, it is just somewhere the
+    # hunter does not want to be sent. Nil province admits everything.
+    def out_of_province?(zone)
+      !zone.in_province?(@province)
     end
 
     def admissible_zones_for(skill)
@@ -222,6 +235,7 @@ module UberCombat
       end
       confident = in_band.reject { |zone| zone.low_confidence? && !zone.allow_low_confidence_auto_select? }
       reachable = confident.reject { |zone| premium_locked?(zone) }
+      in_province = reachable.reject { |zone| out_of_province?(zone) }
 
       reason = if in_band.empty?
                  :no_band_in_range
@@ -229,13 +243,15 @@ module UberCombat
                  :confidence_excluded
                elsif reachable.empty?
                  :premium_excluded
+               elsif in_province.empty?
+                 :province_excluded
                else
                  :defense_ceiling
                end
 
       { skill: skill, reason: reason,
         detail: { rank: rank, zones_in_band: in_band.size, zones_after_confidence: confident.size,
-                  zones_after_premium: reachable.size } }
+                  zones_after_premium: reachable.size, zones_after_province: in_province.size } }
     end
 
     def debilitation_record(legs)

@@ -89,7 +89,8 @@ class UcLegReport
     # fail: it defaults to false and silently gates a premium character out of
     # the zones they paid for (uc_zone_picker.rb#initialize).
     @picker = UberCombat::ZonePicker.new(@character, @zone_table,
-                                         UberCombat::LegSettings.premium(settings))
+                                         UberCombat::LegSettings.premium(settings),
+                                         province: UberCombat::LegSettings.in_province_only(settings))
 
     @overlay_engine = UberCombat::LegOverlay.new(@character, uc_weapons,
                                                  uc_spells: uc_spells,

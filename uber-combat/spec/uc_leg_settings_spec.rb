@@ -104,6 +104,47 @@ RSpec.describe UberCombat::LegSettings do
   # The account tier that gates premium-only hunting zones. Read through the
   # same real pipeline shape as everything else here: the value sits one level
   # down under uc_settings, where the keys are still Strings.
+  describe ".in_province_only" do
+    it "reads the province name" do
+      settings = get_settings_shape("uc_settings" => { "in_province_only" => "Zoluren" })
+
+      expect(described_class.in_province_only(settings)).to eq("Zoluren")
+    end
+
+    it "reads an absent setting as no restriction" do
+      settings = get_settings_shape("uc_settings" => {})
+
+      expect(described_class.in_province_only(settings)).to be_nil
+    end
+
+    it "reads an absent uc_settings block as no restriction" do
+      expect(described_class.in_province_only(get_settings_shape({}))).to be_nil
+    end
+
+    # A blank value is somebody clearing the setting, not naming a province
+    # that no zone can match. Treating it as a real name would admit nothing
+    # at all, which looks exactly like a character with nowhere to hunt.
+    it "reads a blank value as no restriction rather than an impossible one" do
+      settings = get_settings_shape("uc_settings" => { "in_province_only" => "   " })
+
+      expect(described_class.in_province_only(settings)).to be_nil
+    end
+
+    it "trims surrounding whitespace" do
+      settings = get_settings_shape("uc_settings" => { "in_province_only" => " Ilithi " })
+
+      expect(described_class.in_province_only(settings)).to eq("Ilithi")
+    end
+
+    # A YAML author who writes `in_province_only: true` has said something
+    # meaningless, and a non-string must not be coerced into a name.
+    it "ignores a non-string value" do
+      settings = get_settings_shape("uc_settings" => { "in_province_only" => true })
+
+      expect(described_class.in_province_only(settings)).to be_nil
+    end
+  end
+
   describe ".premium" do
     it "reads a declared premium account as true" do
       settings = get_settings_shape("uc_settings" => { "premium" => true })

@@ -418,6 +418,10 @@ class UcProbe
     # across runs: the character advances, and a stale metric would defer
     # zones they have already grown into.
     @defence = @character.defensive_metric(:concentrated)
+    # The same setting the picker reads, deliberately. A probe that walked
+    # outside the province the picker refuses to send a hunt to would spend
+    # the travel budget settling zones no leg can ever use.
+    @province = UberCombat::LegSettings.in_province_only(get_settings)
   end
 
   # PLAN ONLY. Issues no game command, walks nowhere, writes nothing.
@@ -426,7 +430,7 @@ class UcProbe
     world = ProbeWorld.new(0)
     begin
       partition = UberCombat::Probe.partition(@zone_table.zones, world.method(:rooms_for_tag),
-                                              defence: @defence)
+                                              defence: @defence, province: @province)
       report_partition(partition)
       report_order(world, partition.probeable)
     ensure
@@ -452,7 +456,7 @@ class UcProbe
     outcome = nil
     begin
       session = UberCombat::Probe::Session.new(pending_zones, world, tier: @tier, meta: meta,
-                                               defence: @defence)
+                                               defence: @defence, province: @province)
       outcome = session.run
     ensure
       world.cleanup
@@ -583,8 +587,9 @@ class UcProbe
   end
 
   def banner
-    DRC.message(format('=== uc-probe: %s, tier=%s, defences=%.1f, %d zones loaded ===',
-                       XMLData.name, @tier || 'UNKNOWN', @defence, @zone_table.zones.size))
+    DRC.message(format('=== uc-probe: %s, tier=%s, defences=%.1f, province=%s, %d zones loaded ===',
+                       XMLData.name, @tier || 'UNKNOWN', @defence, @province || 'any',
+                       @zone_table.zones.size))
   end
 
   def report_partition(partition)
@@ -594,6 +599,8 @@ class UcProbe
     DRC.message(format('  no map tag     %4d  (nothing to walk to)', partition.no_tag.size), false)
     DRC.message(format('  already known  %4d  (premium answered, nothing left to learn)',
                        partition.answered.size), false)
+    DRC.message(format('  out of province%4d  (in_province_only: %s)',
+                       partition.out_of_province.size, @province || 'not set'), false)
     DRC.message(format('  out of band    %4d  (deferred: defences %.1f cannot survive there)',
                        partition.out_of_band.size, @defence), false)
     DRC.message('  Neither is recorded, and the two mean opposite things: an answered zone', false)
@@ -660,6 +667,7 @@ class UcProbe
     DRC.message(format('  zones settled this run: %d', outcome.records.size), false)
     DRC.message(format('  travel attempts spent:  %d', world.attempts), false)
     DRC.message(format('  skipped, already known: %d', outcome.answered), false)
+    DRC.message(format('  skipped, out of province: %d', outcome.out_of_province), false)
     DRC.message(format('  deferred, out of band:  %d', outcome.deferred), false)
     if outcome.aborted
       detail = world.abort_detail ? " (#{world.abort_detail})" : ''

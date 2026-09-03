@@ -44,8 +44,10 @@ class UcZonesReport
     # tier, and only the profile carries it. This diagnostic must agree with
     # uc-leg, or a zone listed as a candidate here goes missing from the
     # itinerary there with nothing to explain the difference.
+    settings = get_settings
     @picker = UberCombat::ZonePicker.new(@character, @zone_table,
-                                         UberCombat::LegSettings.premium(get_settings))
+                                         UberCombat::LegSettings.premium(settings),
+                                         province: UberCombat::LegSettings.in_province_only(settings))
   end
 
   def run

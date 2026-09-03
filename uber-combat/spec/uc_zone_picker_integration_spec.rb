@@ -66,7 +66,8 @@ RSpec.describe UberCombat::ZonePicker, "against the committed zone table" do
   end
 
   it "gives every unplaced skill a reason from the known set" do
-    known = [:no_band_in_range, :confidence_excluded, :premium_excluded, :defense_ceiling, :no_carrier]
+    known = [:no_band_in_range, :confidence_excluded, :premium_excluded, :province_excluded,
+             :defense_ceiling, :no_carrier]
 
     expect(itinerary.unplaced.map { |row| row[:reason] }).to all(be_in(known))
   end
