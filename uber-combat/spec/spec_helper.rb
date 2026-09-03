@@ -6,6 +6,7 @@ require_relative "../lib/uc_zone_picker"
 require_relative "../lib/uc_leg_tracker"
 require_relative "../lib/uc_leg_overlay"
 require_relative "../lib/uc_leg_settings"
+require_relative "../lib/uc_leg_writer"
 require_relative "support/fake_skills"
 require_relative "support/fake_zone_table"
 
