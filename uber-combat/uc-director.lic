@@ -24,7 +24,11 @@
                                itinerary, leg 1's overlay YAML, the exact
                                launch line with its computed timeout, the
                                PREDICTED write decision, and the safety floor.
-    ;uc-director run N      -- act. N is a MANDATORY positive stint budget.
+    ;uc-director run N      -- act. N is HOW MANY HUNTS to run, and it is
+                               mandatory. It is NOT a leg number, even though
+                               `;uc-leg go N` in this same suite takes one.
+                               The director chooses the legs itself and
+                               rotates the itinerary as skills grow.
     ;uc-director report     -- print the last run's stint table. In-memory
                                only in D1 (nothing is persisted; see below).
 
@@ -860,7 +864,12 @@ class UcDirector
     end
     $UC_DIRECTOR = self
 
-    DRC.message(format('-- Hunting: budget %d PRODUCTIVE stint(s) --', budget))
+    # "%d hunt(s)", not "budget %d". The old wording invited reading the
+    # number as a leg, which `;uc-leg go N` in this same suite really does
+    # mean. No leg count here on purpose: the itinerary does not exist yet
+    # and building one for a banner would be a second build_itinerary call,
+    # which the picker answers from live skills and so can answer differently.
+    DRC.message(format('-- Hunting: %d hunt(s) to run. The director picks the legs. --', budget))
     DRC.message('  A stint that never reached the hunt loop does not spend the budget.', false)
     DRC.message('  ;p uc-director takes effect at the next cycle, not mid-stint.', false)
 
@@ -1016,7 +1025,14 @@ when /\Arun\z/i
     # sends its text down a channel that strips anything shaped like a tag, so
     # a bracketed placeholder is silently deleted -- uc-probe's first live run
     # printed a command with its argument missing for exactly this reason.
-    DRC.message('uc-director: run needs a positive stint budget. Usage: ;uc-director run N')
+    # N IS A COUNT OF HUNTS, NOT A LEG NUMBER. Worth being explicit about,
+    # because `;uc-leg go 1` in this same suite DOES take a leg number, and
+    # the two commands look identical. A real person read `run 4` as "run
+    # leg 4" and asked whether a fourth leg existed.
+    DRC.message('uc-director: run needs a number of hunts. Usage: ;uc-director run N')
+    DRC.message('  N is HOW MANY hunts to run, not which leg to hunt. The director', false)
+    DRC.message('  picks the leg itself and rotates through the itinerary as skills grow.', false)
+    DRC.message('  ;uc-director run 4 means four hunts, not leg 4.', false)
     DRC.message('  There is no unbounded mode. One stint is half an hour of unattended combat.', false)
   else
     UcDirector.new.run(budget.to_i)
