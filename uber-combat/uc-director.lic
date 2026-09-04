@@ -114,6 +114,11 @@ class DirectorWorld
   # recovery could outlive the run it was recovering from.
   GOSAFE_TIMEOUT = 300
 
+  # How long to wait for a killed go2 to actually be gone. A runtime kill is
+  # ASYNCHRONOUS (script.rb:1781-1783), so a caller that does not wait can
+  # start the next stint while the old walker is still tearing down.
+  WALKER_STOP_TIMEOUT = 10
+
   # The return shape of #run_stint (spec 3.2). The Struct itself is DEFINED in
   # lib/uc_director.rb, not here, and this adapter only builds instances of it.
   # Spec 3.2 says "built by the adapter", which is true of the values and was
@@ -355,9 +360,14 @@ class DirectorWorld
     launch(:start_error)
   rescue Script::TimeoutError
     # join returned nil, then kill_sync ran, THEN the raise. The doc comment
-    # guarantees that ordering (script.rb:987-989), so no unsupervised child
+    # guarantees that ordering (script.rb:987-989), so no unsupervised CHILD
     # survives this. hunting-buddy's own before_dying still stopped
     # combat-trainer on the way out (:707-718, run inside __run_kill_cleanup).
+    #
+    # A WALKER is not a child, which is why stop_walkers exists. See its
+    # comment: the kill cascade cannot reach go2, and an orphaned go2 turns
+    # the NEXT stint into the very hang this timeout exists to break.
+    stop_walkers
     #
     # What a timeout does NOT do is walk the character home: the
     # DRCT.walk_to(safe_room) at hunting-buddy.lic:273 is in main, after the
@@ -367,6 +377,52 @@ class DirectorWorld
     launch(:timeout)
   rescue StandardError => e
     launch(:error, exit_error: e)
+  end
+
+  # --------------------------------------------------------------- walkers
+
+  # Stop a walker the stint teardown could not reach. Returns true when
+  # nothing is walking any more.
+  #
+  # THE KILL CASCADE DOES NOT REACH go2. walk_to starts it with
+  # start_script (common-travel.rb:223), which is Script.start
+  # (global_defs.rb:19-24) and NOT start_child, so go2 is a sibling of
+  # hunting-buddy rather than a child, and Script#kill's __stop_children
+  # (script.rb:2052) never sees it. hunting-buddy's own before_dying stops
+  # only combat-trainer (hunting-buddy.lic tail).
+  #
+  # Left running, go2 keeps walking toward the room hunting-buddy wanted
+  # while the director believes the stint is over. The next stint's walk_to
+  # then calls start_script('go2') a second time, Lich refuses the duplicate
+  # and returns nil (script.rb:740-747), walk_to's `while
+  # Script.running.include?(script_handle)` is false immediately because the
+  # handle is nil, and find_empty_room is handed a character who never
+  # arrives -- the unbounded `pause 0.1 until room_id == Room.current.id` at
+  # common-travel.rb:324. That is the exact hang the timeout exists to break,
+  # re-entered through the back door one stint later.
+  #
+  # bescort is deliberately NOT killed. A crossing is bounded and ends by
+  # itself, killing one mid-ferry can strand the character on the far side,
+  # and walk_to already holds its own 90-second stall timer off for as long
+  # as bescort runs (common-travel.rb:253) -- so a later stint tolerates one
+  # that is still finishing. Only the walker that would keep CHOOSING rooms
+  # is stopped.
+  def stop_walkers
+    return true unless Script.running?('go2')
+
+    DRC.message('uc-director: stopping an orphaned go2 left over from the stint.')
+    kill_script('go2')
+    waited = 0
+    while Script.running?('go2') && waited < WALKER_STOP_TIMEOUT
+      pause 0.5
+      waited += 0.5
+    end
+
+    return true unless Script.running?('go2')
+
+    DRC.message(format('uc-director: go2 is STILL running %d s after the kill. ' \
+                       'The next stint may not travel correctly.', WALKER_STOP_TIMEOUT))
+    false
   end
 
   # -------------------------------------------------------------- recovery
@@ -385,6 +441,12 @@ class DirectorWorld
   # stop -- leaving the character parked and still logged in.
   def recover(reason)
     DRC.message(format('-- Safety stop (%s): running gosafe --', reason))
+    # Before gosafe, not after. gosafe is 14 lines ending in DRCT.walk_to
+    # (dr-scripts/gosafe.lic:11), so it starts a go2 of its own -- and an
+    # orphaned walker still running would make Lich refuse that one as a
+    # duplicate (script.rb:740-747), leaving the character walking toward the
+    # hunting zone during what is supposed to be the retreat from it.
+    stop_walkers
     Script.run_child('gosafe', timeout: GOSAFE_TIMEOUT)
     DRC.message('  gosafe finished.', false)
     nil
