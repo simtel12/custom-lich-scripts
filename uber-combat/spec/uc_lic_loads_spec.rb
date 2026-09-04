@@ -73,6 +73,25 @@ RSpec.describe "the .lic scripts" do
                          "Add the load to the block at the top of the script."
     end
 
+    # Script.start's argument dispatch takes args[1] as a String (the script's
+    # arguments) or a Hash (options), and falls through to a bare `next nil`
+    # for anything else -- the whole error path is a `# fixme: error` comment
+    # (script.rb:86-105). So an Array refuses the launch with NO message
+    # anywhere, and run_child reports it as a StartError, which reads exactly
+    # like "that script is already running".
+    #
+    # The array form is correct for start_script, which joins it before
+    # calling Script.start (global_defs.rb:19-24). That is what makes it a
+    # trap rather than an obvious slip, and it cost a full run of
+    # `;uc-director run 1` to find.
+    it "#{name} passes script arguments to Script.* as a String, not an Array" do
+      offenders = File.read(path).scan(/Script\.(?:start|run|start_child|run_child)\(\s*'[^']*'\s*,\s*\[[^\]]*\]/)
+
+      expect(offenders).to be_empty,
+                           "#{name} calls #{offenders.join(', ')}. Script.start silently refuses " \
+                           "an Array argument. Join it into a String: Script.run_child('x', 'a b')."
+    end
+
     # A load that nothing needs is dead weight rather than a defect, but it is
     # usually the fossil of a call that moved to another script, and it costs
     # a file read on every run.
