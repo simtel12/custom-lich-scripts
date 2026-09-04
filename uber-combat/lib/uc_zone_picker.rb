@@ -52,6 +52,8 @@ module UberCombat
 
     def admissible?(zone, skill)
       return false unless zone.closed_band?
+      return false if zone.escort_access?
+      return false unless @zone_table.critter_bands_known?(zone)
       return false if zone.low_confidence? && !zone.allow_low_confidence_auto_select?
       return false if premium_locked?(zone)
       return false if out_of_province?(zone)
@@ -233,12 +235,20 @@ module UberCombat
       in_band = @zone_table.zones.select do |zone|
         zone.closed_band? && zone.rank_min <= rank && rank <= zone.rank_max
       end
-      confident = in_band.reject { |zone| zone.low_confidence? && !zone.allow_low_confidence_auto_select? }
+      # Stage order mirrors admissible? exactly. A stage that runs in one and
+      # not the other reports a reason the picker never applied.
+      walkable = in_band.reject(&:escort_access?)
+      judged = walkable.select { |zone| @zone_table.critter_bands_known?(zone) }
+      confident = judged.reject { |zone| zone.low_confidence? && !zone.allow_low_confidence_auto_select? }
       reachable = confident.reject { |zone| premium_locked?(zone) }
       in_province = reachable.reject { |zone| out_of_province?(zone) }
 
       reason = if in_band.empty?
                  :no_band_in_range
+               elsif walkable.empty?
+                 :escort_access
+               elsif judged.empty?
+                 :unknown_critter_band
                elsif confident.empty?
                  :confidence_excluded
                elsif reachable.empty?
@@ -250,7 +260,8 @@ module UberCombat
                end
 
       { skill: skill, reason: reason,
-        detail: { rank: rank, zones_in_band: in_band.size, zones_after_confidence: confident.size,
+        detail: { rank: rank, zones_in_band: in_band.size, zones_after_escort: walkable.size,
+                  zones_after_critter_bands: judged.size, zones_after_confidence: confident.size,
                   zones_after_premium: reachable.size, zones_after_province: in_province.size } }
     end
 

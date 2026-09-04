@@ -111,6 +111,94 @@ RSpec.describe UberCombat::ZoneTable do
     end
   end
 
+  # A zone reachable only by an escort. The key is not a room tag, so
+  # hunting-buddy resolves no hunting room from it and exits immediately
+  # (hunting-buddy.lic:383-386). Read through the get_data shape for the same
+  # reason Zone#premium is: `access` is a NESTED key, so it stays a String in
+  # production while the top level does not.
+  describe "Zone#escort_access?" do
+    def zone_with(entry)
+      parsed = { "zones" => { "gated" => { "rank" => { "min" => 10, "max" => 20 } }.merge(entry) } }
+
+      described_class.new(OpenStruct.new(parsed).to_h).zone("gated")
+    end
+
+    it "reads true for an escort-only zone" do
+      expect(zone_with("access" => "escort").escort_access?).to be(true)
+    end
+
+    it "reads false for a zone that can be walked to" do
+      expect(zone_with("access" => "plain").escort_access?).to be(false)
+    end
+
+    # Absent must not read as escort. That direction excludes a walkable zone
+    # for no reason, and every row in the table carries the key today, so
+    # nothing but a typo would land here.
+    it "reads false when the key is absent entirely" do
+      expect(zone_with({}).escort_access?).to be(false)
+    end
+  end
+
+  # A zone band is the INTERSECTION of its critters' bands, so it already
+  # means "the window in which every creature here still teaches". That is
+  # only true while every critter HAS a band: an intersection silently ignores
+  # a nil, so golden_atiket reads 120-170 from the atik'et alone while the
+  # westanuryn's band is nil/nil. A character sent there fights something that
+  # teaches nothing, and combat-trainer then DELETES that weapon from
+  # weapons_to_train (CT:5821-5833), disarming the character.
+  #
+  # Built through the get_data shape because `rank`, `min` and `max` on a
+  # critter record are all nested and stay Strings in production.
+  describe "#critter_bands_known?" do
+    def table_with(refs, critters)
+      zone = { "rank" => { "min" => 10, "max" => 20 }, "critter_refs" => refs }
+      parsed = { "critters" => critters, "zones" => { "mixed" => zone } }
+
+      described_class.new(OpenStruct.new(parsed).to_h)
+    end
+
+    def known?(refs, critters)
+      table = table_with(refs, critters)
+
+      table.critter_bands_known?(table.zone("mixed"))
+    end
+
+    # One creature cannot diverge from itself, so a lone unknown band leaves
+    # the zone band exactly as trustworthy as the comment it came from. 5
+    # zones are in that state and none of them is at risk.
+    it "trusts a single-critter zone even when that critter's band is unknown" do
+      expect(known?({ "lone beast" => "Lone_beast" },
+                    { "Lone_beast" => { "rank" => { "min" => nil, "max" => nil } } })).to be(true)
+    end
+
+    it "trusts a zone whose several critters all carry a closed band" do
+      expect(known?({ "one" => "One", "two" => "Two" },
+                    { "One" => { "rank" => { "min" => 10, "max" => 20 } },
+                      "Two" => { "rank" => { "min" => 15, "max" => 25 } } })).to be(true)
+    end
+
+    it "refuses a zone where one of several critters has no lower bound" do
+      expect(known?({ "one" => "One", "two" => "Two" },
+                    { "One" => { "rank" => { "min" => 10, "max" => 20 } },
+                      "Two" => { "rank" => { "min" => nil, "max" => 25 } } })).to be(false)
+    end
+
+    it "refuses a zone where one of several critters has no upper bound" do
+      expect(known?({ "one" => "One", "two" => "Two" },
+                    { "One" => { "rank" => { "min" => 10, "max" => 20 } },
+                      "Two" => { "rank" => { "min" => 15, "max" => nil } } })).to be(false)
+    end
+
+    # A dangling ref is not a closed band by another name. Nothing is known
+    # about a record that is not there, so it has to fail the same way an
+    # explicit nil/nil does rather than resolve to nil and be treated as
+    # absent from the roster.
+    it "refuses a zone whose ref points at a critter record that does not exist" do
+      expect(known?({ "one" => "One", "ghost" => "Missing_record" },
+                    { "One" => { "rank" => { "min" => 10, "max" => 20 } } })).to be(false)
+    end
+  end
+
   describe ".from_game_data" do
     it "refuses an empty table instead of reporting zero candidates" do
       allow(described_class).to receive(:fetch_game_data).and_return({})

@@ -548,7 +548,7 @@ zones:
   red-gold_atiket:
     rank:
       min: 250
-      max: 350
+      max: 290
     rank_confidence: high
     critters:
       - "red-gold scaled atik'et"
@@ -574,7 +574,7 @@ zones:
         engaged: false
         elapsed: null
     provenance:
-      rank: comment
+      rank: critter_intersection
       critters: comment_url_slug
       critter_refs: noun_bijection
       province: comment

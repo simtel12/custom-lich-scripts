@@ -14,10 +14,20 @@
 # the leading skill crosses it. Mindlock and no-gain are backstops for zones
 # whose authored band is absent or optimistic.
 #
-# CT's own no-gain counter is not usable here. It only advances when more than
-# one weapon is configured (CT:5821), which is never true for a per-skill leg,
-# and it lives inside a CT instance that a leg change restarts. This layer
-# computes the signal itself.
+# CT's own no-gain counter is not usable here, because it lives inside a CT
+# instance that a leg change restarts. This layer computes the signal itself.
+#
+# CORRECTED 2026-09-04. This comment used to add that CT's counter "only
+# advances when more than one weapon is configured (CT:5821), which is never
+# true for a per-skill leg". The gate is real; the reassurance was not. Legs
+# are CLUSTERED, not per-skill -- a real itinerary put three weapons on leg 1
+# and five on leg 2 -- so weapons_to_train.size > 1 holds and the counter runs.
+#
+# That matters beyond a comment. On a no-gain streak CT DELETES the weapon
+# from weapons_to_train (CT:5833), so a creature too weak to teach silently
+# disarms the character for the rest of the hunt. It is the reason
+# ZonePicker#admissible? now refuses a zone whose critters do not all stop
+# teaching together (UberCombat::CritterBands).
 module UberCombat
   class LegTracker
     # uc_gain_check. Deliberately our own knob, not CT's

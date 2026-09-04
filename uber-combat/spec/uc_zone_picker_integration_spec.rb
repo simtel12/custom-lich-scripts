@@ -65,8 +65,14 @@ RSpec.describe UberCombat::ZonePicker, "against the committed zone table" do
     expect((placed + reported).sort).to eq(trained.sort)
   end
 
+  # Widened deliberately, not to make anything pass. :escort_access and
+  # :unknown_critter_band joined ZonePicker#exclusion_record and are valid
+  # reasons, but this list did not gain them and kept passing, because the
+  # Drazoken fixture happens to produce neither. A later rank change or data
+  # edit would then fail here for a reason that is perfectly correct.
   it "gives every unplaced skill a reason from the known set" do
-    known = [:no_band_in_range, :confidence_excluded, :premium_excluded, :province_excluded,
+    known = [:no_band_in_range, :escort_access, :unknown_critter_band,
+             :confidence_excluded, :premium_excluded, :province_excluded,
              :defense_ceiling, :no_carrier]
 
     expect(itinerary.unplaced.map { |row| row[:reason] }).to all(be_in(known))

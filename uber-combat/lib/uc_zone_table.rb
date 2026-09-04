@@ -80,6 +80,19 @@ module UberCombat
       data["access"]
     end
 
+    # Reachable only by an escort, so the zone key is not a room tag and no
+    # amount of travel finds a hunting room in it. hunting-buddy resolves its
+    # rooms from the key and exits when the list comes back empty
+    # (hunting-buddy.lic:383-386), which a caller sees as a stint that
+    # returned in seconds having taught nothing.
+    #
+    # 18 zones carry this. They are excluded from auto-selection rather than
+    # deleted, because the escort route is real and a later wave can use it.
+    # What is untrue is that a hunt can be SENT here unaided.
+    def escort_access?
+      access == "escort"
+    end
+
     def province
       data["province"]
     end
@@ -117,7 +130,75 @@ module UberCombat
     end
   end
 
+  # Extracted into a module for one reason: spec/support/fake_zone_table.rb
+  # includes it too, so the double in the tests runs THIS code rather than a
+  # copy of it or a stub that always answers yes. A double that answers a
+  # production predicate more generously than production does is how a rule
+  # passes every test and then fails in game, and this project has shipped
+  # that shape of bug twice already.
+  #
+  # It needs only #critters and a Zone, which the real table and the fake one
+  # expose identically.
+  module CritterBands
+    # Can this zone's band be trusted to mean "every creature here still
+    # teaches"?
+    #
+    # WHY THE BAND ALREADY MEANS THAT. For all 30 multi-critter zones whose
+    # critters carry a band, the zone band is exactly the INTERSECTION of
+    # those bands: max(mins) to min(maxes). The band is therefore already the
+    # window in which no creature has dropped out, and the ordinary rank test
+    # in ZonePicker#admissible? enforces the rule with no help.
+    # boar_boobrie_riverhaven reads 50-42 because the boar stops teaching at
+    # 42 and the boobrie does not start until 50 -- an empty window. An
+    # inverted band can never satisfy rank_min <= rank <= rank_max, so such a
+    # zone excludes itself with no code at all.
+    #
+    # THE HOLE THIS CLOSES. An intersection cannot account for a critter whose
+    # own band is unknown. golden_atiket's 120-170 came from the atik'et
+    # alone, because the westanuryn's band is nil/nil with rank_confidence
+    # "low" and the note "no band text on this row". The zone LOOKS uniform
+    # and is not, so a character sent there fights something that teaches it
+    # nothing.
+    #
+    # golden_atiket is the case that DEMONSTRATES the hazard, not a zone this
+    # rule still has to catch: it is also access "escort", so Zone#escort_access?
+    # -- added in the same change -- already refuses it, and that test runs
+    # first. Of the 6 zones failing this predicate, 3 are refused by something
+    # else as well (2 escort, 1 low confidence). This rule is the SOLE reason
+    # for exactly three: money_grubbers, shifty_eyed_skinflints and orc_scouts,
+    # all in Therengia, all with bands a mid-level character would fit.
+    # spec/uc_zone_data_integrity_spec.rb pins the counts.
+    #
+    # That is not cosmetic. combat-trainer DELETES a weapon from
+    # weapons_to_train once it stops gaining mindstate (CT:5821-5833). The
+    # weak creature disarms the character, and the creature the zone was
+    # chosen for then arrives to find nothing willing to attack it.
+    #
+    # ONLY multi-critter zones are judged. One creature cannot diverge from
+    # itself, so a lone unknown band leaves the zone band exactly as
+    # trustworthy as the comment it came from. 5 zones are in that state and
+    # none of them is at risk.
+    def critter_bands_known?(zone)
+      refs = zone.critter_refs
+      return true if refs.size < 2
+
+      refs.each_value.all? { |key| closed_critter_band?(critters[key]) }
+    end
+
+    private
+
+    # Indexed with Strings for the same reason Zone#premium is: these keys are
+    # nested, and get_data's OpenStruct symbolises the top level only, so a
+    # Symbol here would read nil for every record in production and fail open.
+    def closed_critter_band?(record)
+      band = record && record["rank"]
+      !band.nil? && !band["min"].nil? && !band["max"].nil?
+    end
+  end
+
   class ZoneTable
+    include CritterBands
+
     DEFAULT_PATH = File.expand_path("../data/base-uc-zones.yaml", __dir__)
 
     # An empty table is never legitimate. It reports every skill as having no

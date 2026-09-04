@@ -189,6 +189,115 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
     end
   end
 
+  # An escort zone's key is not a room tag, so hunting-buddy resolves no
+  # hunting room from it and exits (hunting-buddy.lic:383-386). A caller sees
+  # a stint that returned in seconds having taught nothing. 18 zones in the
+  # committed table are in this state.
+  describe "the escort access exclusion" do
+    it "refuses an escort zone the skill otherwise fits perfectly" do
+      target = zone(min: 100, max: 190, extra: { "access" => "escort" })
+
+      expect(picker([target]).admissible?(target, "Small Edged")).to be(false)
+    end
+
+    it "admits the same zone once it can be walked to" do
+      target = zone(min: 100, max: 190, extra: { "access" => "plain" })
+
+      expect(picker([target]).admissible?(target, "Small Edged")).to be(true)
+    end
+
+    it "names escort_access when the escort exclusion is what emptied the list" do
+      target = zone(min: 100, max: 190, extra: { "access" => "escort" })
+      unplaced = picker([target]).build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:reason]).to eq(:escort_access)
+      expect(record[:detail][:zones_after_escort]).to eq(0)
+    end
+
+    # The stages narrow in a fixed order and the reason names the FIRST stage
+    # that emptied the set, so every record carries a single actionable cause.
+    # This zone is both escort-only and premium-locked; escort runs first, so
+    # buying premium would not make it hunt-able and the record must not say
+    # that it would.
+    it "reports escort_access ahead of premium for a zone that is both" do
+      target = zone(min: 100, max: 190, extra: { "access" => "escort", "premium" => true })
+      unplaced = picker([target]).build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:reason]).to eq(:escort_access)
+    end
+  end
+
+  # A zone band is the INTERSECTION of its critters' bands, so it already
+  # means "the window in which every creature here still teaches" -- but only
+  # while every critter HAS a band, because an intersection silently ignores a
+  # nil. golden_atiket reads 120-170 from the atik'et alone while the
+  # westanuryn's band is nil/nil, so the zone LOOKS uniform and is not.
+  #
+  # The cost is not cosmetic: combat-trainer DELETES a weapon from
+  # weapons_to_train once it stops gaining mindstate (CT:5821-5833), so the
+  # weak creature disarms the character before the creature the zone was
+  # picked for ever shows up.
+  describe "the unknown critter band exclusion" do
+    def critter_picker(zones, critters)
+      described_class.new(character, FakeZoneTable.new(zones, critters))
+    end
+
+    let(:closed_critters) do
+      { "One" => { "rank" => { "min" => 100, "max" => 190 } },
+        "Two" => { "rank" => { "min" => 120, "max" => 200 } } }
+    end
+
+    let(:open_critters) do
+      { "One" => { "rank" => { "min" => 100, "max" => 190 } },
+        "Two" => { "rank" => { "min" => nil, "max" => nil } } }
+    end
+
+    let(:pair_refs) { { "critter_refs" => { "one" => "One", "two" => "Two" } } }
+
+    it "refuses a multi-critter zone with an unknown critter band the skill otherwise fits perfectly" do
+      target = zone(min: 100, max: 190, extra: pair_refs)
+
+      expect(critter_picker([target], open_critters).admissible?(target, "Small Edged")).to be(false)
+    end
+
+    it "admits the same zone once every critter carries a closed band" do
+      target = zone(min: 100, max: 190, extra: pair_refs)
+
+      expect(critter_picker([target], closed_critters).admissible?(target, "Small Edged")).to be(true)
+    end
+
+    # One creature cannot diverge from itself, so a lone unknown band leaves
+    # the zone band exactly as trustworthy as the comment it came from. 5
+    # zones in the committed table are in this state and none is at risk.
+    it "still admits a single-critter zone whose one critter has an unknown band" do
+      target = zone(min: 100, max: 190, extra: { "critter_refs" => { "two" => "Two" } })
+
+      expect(critter_picker([target], open_critters).admissible?(target, "Small Edged")).to be(true)
+    end
+
+    it "names unknown_critter_band when the critter bands are what emptied the list" do
+      target = zone(min: 100, max: 190, extra: pair_refs)
+      unplaced = critter_picker([target], open_critters).build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:reason]).to eq(:unknown_critter_band)
+      expect(record[:detail][:zones_after_critter_bands]).to eq(0)
+    end
+
+    # The escort stage runs first, so a walkable zone reaching this stage is
+    # what makes the reason readable at all: zones_after_escort still counts
+    # the zone, and only the critter stage drops it.
+    it "reports the escort stage as having kept the zone it then drops" do
+      target = zone(min: 100, max: 190, extra: pair_refs)
+      unplaced = critter_picker([target], open_critters).build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:detail][:zones_after_escort]).to eq(1)
+    end
+  end
+
   describe "#admissible_zones_for" do
     it "returns only the zones that pass every test" do
       good = zone(key: "good", min: 100, max: 190)
