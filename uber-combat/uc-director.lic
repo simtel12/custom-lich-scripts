@@ -583,7 +583,12 @@ class DirectorWorld
     DRC.message('-- The stint `run` would launch --')
     DRC.message(format("  Script.run_child('hunting-buddy', ['uc'], timeout: %d)", data[:timeout].to_i), false)
     DRC.message(format('  duration: %d minutes, written into the overlay as the :duration: key', data[:duration].to_i), false)
-    DRC.message(format('  timeout:  %d seconds (duration plus the slack)', data[:timeout].to_i), false)
+    # NOT "duration plus slack", which was the old wording and which framed
+    # this as a second opinion on the hunt. hunting-buddy already bounds its
+    # own hunting (hunting-buddy.lic:622). This bounds the parts NOTHING
+    # times: the tannery trip, the restock, travel, and the walk home.
+    DRC.message(format('  timeout:  %d seconds -- the outer bound on the whole stint, including ' \
+                       'the untimed travel and restock around the hunt', data[:timeout].to_i), false)
     DRC.message('  Nothing below this line has run. This mode issues no game command.', false)
   end
 

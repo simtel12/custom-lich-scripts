@@ -58,11 +58,32 @@ module UberCombat
     # (:231, :389-446). run_child's timeout: is the ONLY thing in the whole
     # stack that breaks that loop.
     #
-    # UNMEASURED GUESS (open question (g)). Too small and ordinary stints
-    # report :timed_out, which after MAX_LEG_FAILURES in a row wrongly skips a
-    # good leg; too large and a genuine find_empty_room hang costs
-    # duration + slack before the timeout breaks it.
-    STINT_SLACK_SECONDS = 900
+    # AND IT IS NOT THE WORST CASE. The user reports (2026-09-04) that go2
+    # can spin FOREVER trying to reach Riverhaven from Crossing with too few
+    # Lirums for the ferry and too little Swimming to cross. That defeats
+    # every progress-based detector in the stack, because the character keeps
+    # MOVING: walk_to resets its own 90-second stall timer whenever the room
+    # changes (common-travel.rb:253), so walk_to never returns, and
+    # find_empty_room is never even reached. Only a bound on TOTAL elapsed
+    # time catches a loop that makes progress. That is this constant.
+    #
+    # NOT a scheduler, and not a second opinion on the hunt. hunting-buddy
+    # bounds its own hunting at :622, but that check lives INSIDE hunt
+    # (:576-670) -- the tannery trip (:129), the blocking restock (:130),
+    # travel (:231) and the walk home (:273) are all untimed. This is the
+    # envelope around those, so it should be generous rather than tight: a
+    # stint that ends normally never touches it.
+    #
+    # 1800 (user, 2026-09-04), raised from 900. Measured round-trip travel to
+    # endrus_serpents alone is about 600 s (5 minutes each way, ferry
+    # included), which left 300 s of the old value for the tannery trip and
+    # the restock, and neither has ever been measured.
+    #
+    # The cost of a large value is bounded and known: a wedged leg burns
+    # duration + slack per attempt, and MAX_LEG_FAILURES attempts before the
+    # leg is skipped. At these values that is two hours to abandon one
+    # unreachable leg. Tightening the loop is D5's job, not this constant's.
+    STINT_SLACK_SECONDS = 1800
 
     # Seconds. A SECONDARY catch only, applied only when the stop reason is
     # nil (classification rule 5).
