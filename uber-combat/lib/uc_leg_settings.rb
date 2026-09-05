@@ -129,6 +129,35 @@ module UberCombat
       trimmed.empty? ? nil : trimmed
     end
 
+    # How many killing skills one leg may carry, or nil to take the picker's
+    # own default. Optional, and most profiles will not set it.
+    #
+    # There is no single right value, because it depends on what the character
+    # trains. A character training two or three skills wants a cap that never
+    # bites; a character training every allowed weapon and magic wants its
+    # legs divided somewhere sensible. So the default is a middle value and
+    # this key is how a person moves it.
+    #
+    # A non-integer, zero or negative value reads as nil -- the default --
+    # rather than as a cap of zero, which would build a leg for every skill
+    # and turn one cycle into a dozen stints. Same fail-open-and-report
+    # direction as .in_province_only above: the caller prints what it saw, so
+    # a typo shows up as a warning instead of as a very strange itinerary.
+    def self.max_skills_per_leg(settings)
+      value = uc_settings(settings)["max_skills_per_leg"]
+      return nil unless value.is_a?(Integer)
+      return nil unless value.positive?
+
+      value
+    end
+
+    # True when the key is present but unusable, so a caller can say so. A
+    # missing key is not a mistake and must never warn.
+    def self.bad_max_skills_per_leg?(settings)
+      raw = uc_settings(settings)["max_skills_per_leg"]
+      !raw.nil? && max_skills_per_leg(settings).nil?
+    end
+
     # Names of the OLD top-level keys a profile still carries. The caller
     # prints these as a warning.
     #

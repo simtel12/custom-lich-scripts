@@ -25,7 +25,7 @@ calls and the printing, and they own no decision.
 | `lib/uc_zone_picker.rb` | Admissibility, clustering, stance derivation, the itinerary builder |
 | `lib/uc_leg_tracker.rb` | Leg advancement: the hard exit, mindlock, no-gain, reselect |
 | `lib/uc_leg_overlay.rb` | Maps a leg plus live character state to a complete profile overlay hash, and reports its gaps |
-| `lib/uc_leg_settings.rb` | The one place Lich's `uc_settings` shape is read: weapons, spells, premium, `in_province_only` |
+| `lib/uc_leg_settings.rb` | The one place Lich's `uc_settings` shape is read: weapons, spells, premium, `in_province_only`, `max_skills_per_leg` |
 | `lib/uc_leg_writer.rb` | Writes the overlay atomically, refuses any gap, refuses to overwrite a foreign file |
 | `lib/uc_probe.rb` | The reachability probe's decision core: partition, deadline, verdict, record, and `Probe::Session` |
 | `lib/uc_director.rb` | The D1 hunt spine: pick a leg, write its overlay, run one bounded stint, measure it, advance or repeat |
@@ -95,6 +95,33 @@ is why one of them is named `FakeDirectorWorld` rather than `FakeWorld`.
 a lib is loaded for every `UberCombat::` constant the script names, and nothing
 is loaded that the script does not use. A `.lic` names its own libs, so it can
 use a constant it never loaded while the whole suite still passes.
+
+## Settings
+
+Everything the suite reads from a character lives under one `uc_settings` block
+in `<Character>-setup.yaml`. All of it is optional except the catalogues.
+
+| Key | Meaning |
+| --- | --- |
+| `weapons` | Skill to weapon-name catalogue. A leg skill with no entry is a gap, and a gap refuses the leg |
+| `spells` | Offensive-spell catalogue, matched to a leg by its own `skill` key |
+| `premium` | The account tier. Defaults to non-premium, which gates conservatively |
+| `in_province_only` | Stay inside one province, for example `Zoluren`. Blank or absent means no limit |
+| `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
+
+`max_skills_per_leg` is there because there is no single right value. A
+character training two or three skills wants a cap that never bites. A
+character training every allowed weapon and magic wants its legs divided
+somewhere sensible. The default of 3 gives each skill about ten minutes of a
+30-minute stint against about eight minutes of fixed overhead per stint
+(tannery, restock, travel, walk home), and that ratio holds whatever the
+character trains.
+
+Lower it and each skill gets a bigger share, at the cost of more legs and one
+more lot of overhead each. Raise it for cheaper cycles and a thinner share.
+
+A value that is not a positive whole number is ignored, and the script says so
+rather than falling back in silence.
 
 ## The data file
 

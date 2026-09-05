@@ -22,6 +22,12 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
 
   let(:open_zone) { UberCombat::Zone.new("anywhere", { "rank" => { "min" => 0, "max" => 1000 } }) }
 
+  def picker_character(skills = {})
+    UberCombat::Character.new(
+      FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
+    )
+  end
+
   def picker_with(zones, skills = {}, premium = false)
     character = UberCombat::Character.new(
       FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
@@ -99,6 +105,42 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
 
       expect(uncapped.last.size).to eq(6)
       expect(capped.last(2)).to eq([uncapped.last.first(3), uncapped.last.last(3)])
+    end
+
+    # The cap is a per-character SETTING, not a property of the code. A
+    # character training two or three skills wants one that never bites; a
+    # character training every allowed weapon wants its legs divided somewhere
+    # sensible. Nothing here may depend on any one character's skill list.
+    it "takes the cap from the constructor when one is given" do
+      zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
+      capped = described_class.new(picker_character, FakeZoneTable.new([open_zone]), false,
+                                   max_skills_per_leg: 2)
+
+      legs = capped.build_legs(weapon_vector, zones_by_skill, 40)
+
+      expect(legs.map { |leg| leg[:skills].size }).to all(be <= 2)
+    end
+
+    it "falls back to MAX_SKILLS_PER_LEG when the constructor is given nil" do
+      zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
+      default = described_class.new(picker_character, FakeZoneTable.new([open_zone]), false,
+                                    max_skills_per_leg: nil)
+
+      expect(default.max_skills_per_leg).to eq(described_class::MAX_SKILLS_PER_LEG)
+      expect(default.build_legs(weapon_vector, zones_by_skill, 40).map { |leg| leg[:skills].size })
+        .to all(be <= described_class::MAX_SKILLS_PER_LEG)
+    end
+
+    # A cap only ever splits a cluster the width rule already built, so it
+    # cannot bite on a character with few skills. This is the property that
+    # makes a single default safe for every character.
+    it "does not bite on a character training fewer skills than the cap" do
+      ranks = { "Small Edged" => 100, "Brawling" => 98 }
+      zones_by_skill = ranks.keys.to_h { |skill| [skill, [open_zone]] }
+
+      legs = picker_with([open_zone]).build_legs(ranks, zones_by_skill, 40)
+
+      expect(legs.map { |leg| leg[:skills] }).to eq([["Small Edged", "Brawling"]])
     end
 
     it "keeps the default width inside the stable band" do

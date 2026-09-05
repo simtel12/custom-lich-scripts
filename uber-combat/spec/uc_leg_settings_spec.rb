@@ -104,6 +104,66 @@ RSpec.describe UberCombat::LegSettings do
   # The account tier that gates premium-only hunting zones. Read through the
   # same real pipeline shape as everything else here: the value sits one level
   # down under uc_settings, where the keys are still Strings.
+  describe ".max_skills_per_leg" do
+    it "reads a positive whole number" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => 4 })
+
+      expect(described_class.max_skills_per_leg(settings)).to eq(4)
+    end
+
+    it "reads an absent setting as the picker default" do
+      expect(described_class.max_skills_per_leg(get_settings_shape("uc_settings" => {}))).to be_nil
+    end
+
+    it "reads an absent uc_settings block as the picker default" do
+      expect(described_class.max_skills_per_leg(get_settings_shape({}))).to be_nil
+    end
+
+    # Zero is the dangerous one. Taken literally it caps every leg at no
+    # skills, and build_legs would emit one leg per skill -- turning a
+    # four-stint cycle into a dozen. The default is the safe reading.
+    it "reads zero as the default rather than as a cap of none" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => 0 })
+
+      expect(described_class.max_skills_per_leg(settings)).to be_nil
+    end
+
+    it "reads a negative number as the default" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => -2 })
+
+      expect(described_class.max_skills_per_leg(settings)).to be_nil
+    end
+
+    # A quoted number in YAML is a String. Coercing it would be friendly right
+    # up until someone writes "three", so it reads as the default and the
+    # caller warns instead.
+    it "reads a quoted number as the default" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => "4" })
+
+      expect(described_class.max_skills_per_leg(settings)).to be_nil
+    end
+  end
+
+  describe ".bad_max_skills_per_leg?" do
+    it "is false when the key is absent, because that is not a mistake" do
+      expect(described_class.bad_max_skills_per_leg?(get_settings_shape("uc_settings" => {}))).to be(false)
+    end
+
+    it "is false for a usable value" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => 3 })
+
+      expect(described_class.bad_max_skills_per_leg?(settings)).to be(false)
+    end
+
+    # The whole point: a present-but-unusable value falls back silently, and
+    # silence looks exactly like the setting having no effect.
+    it "is true for a value that is present but unusable" do
+      settings = get_settings_shape("uc_settings" => { "max_skills_per_leg" => "4" })
+
+      expect(described_class.bad_max_skills_per_leg?(settings)).to be(true)
+    end
+  end
+
   describe ".in_province_only" do
     it "reads the province name" do
       settings = get_settings_shape("uc_settings" => { "in_province_only" => "Zoluren" })

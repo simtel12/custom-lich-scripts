@@ -45,9 +45,13 @@ class UcZonesReport
     # uc-leg, or a zone listed as a candidate here goes missing from the
     # itinerary there with nothing to explain the difference.
     settings = get_settings
-    @picker = UberCombat::ZonePicker.new(@character, @zone_table,
-                                         UberCombat::LegSettings.premium(settings),
-                                         province: UberCombat::LegSettings.in_province_only(settings))
+    warn_about_max_skills(settings)
+    @picker = UberCombat::ZonePicker.new(
+      @character, @zone_table,
+      UberCombat::LegSettings.premium(settings),
+      province: UberCombat::LegSettings.in_province_only(settings),
+      max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings)
+    )
   end
 
   def run
@@ -72,6 +76,17 @@ class UcZonesReport
   end
 
   private
+
+  # A present-but-unusable max_skills_per_leg falls back to the default, which
+  # is the safe direction but is also invisible. Say so once, or a person who
+  # wrote `max_skills_per_leg: "3"` sees the default itinerary and concludes
+  # the setting does nothing.
+  def warn_about_max_skills(settings)
+    return unless UberCombat::LegSettings.bad_max_skills_per_leg?(settings)
+
+    DRC.message('uc: max_skills_per_leg must be a positive whole number. ' \
+                'Ignoring it and using the default.')
+  end
 
   def report_itinerary(itinerary)
     DRC.message('-- Itinerary (build_itinerary) --')

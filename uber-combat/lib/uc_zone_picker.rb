@@ -14,26 +14,36 @@ module UberCombat
     # 30 and at 40. Not load-bearing, and not a safety margin.
     LEG_WIDTH_RANKS = 40
 
-    # The most KILLING skills one leg may carry. Debilitation does not count
-    # against it (see assign_debilitation): it is a passenger, it never enters
-    # combat-trainer's weapon rotation, and it trains through offensive_spells
-    # rather than by being swung.
+    # DEFAULT number of killing skills one leg may carry. Overridable per
+    # character with the uc_settings key `max_skills_per_leg`
+    # (LegSettings.max_skills_per_leg).
     #
-    # WHY A LIMIT AT ALL (user, 2026-09-05). More skills on a leg means less
-    # experience per skill in a run of that leg -- combat-trainer divides one
-    # stint's fighting between everything in weapons_to_train. That is
-    # arithmetic rather than a fault, and the right answer is to carry fewer
-    # skills per leg, not to spend more stints on the leg. Zurvan's leg 2 had
-    # collected FIVE skills, so a 30-minute stint gave each about six minutes.
+    # WHY A LIMIT (user, 2026-09-05). More skills on a leg means less
+    # experience per skill in a run of that leg, because combat-trainer
+    # divides one stint's fighting between everything in weapons_to_train.
+    # That is arithmetic rather than a fault, and the answer is to carry fewer
+    # skills per leg, not to spend more stints on the leg.
     #
-    # 3 divides a stint about ten minutes to a skill and splits that leg into
-    # two. The trade is against fixed overhead: every leg is its own stint and
-    # every stint pays a tannery trip, a blocking restock, travel and the walk
-    # home -- measured at roughly eight minutes. Fewer skills per leg means
-    # more legs, more stints, and more of that overhead per cycle.
+    # WHY THIS NUMBER, and it is deliberately NOT derived from any one
+    # character's skill list. The trade is general:
     #
-    # UNMEASURED. Raising it makes cycles cheaper and each skill's share
-    # thinner; lowering it does the reverse.
+    #   Lower cap  -> each skill gets a larger share of a stint, but more legs,
+    #                 and every leg is its own stint paying the same fixed
+    #                 overhead (tannery trip, blocking restock, travel, walk
+    #                 home) -- measured at roughly eight minutes.
+    #   Higher cap -> cheaper cycles, thinner share per skill.
+    #
+    # At DURATION_MINUTES = 30, a cap of 3 gives each skill about ten minutes
+    # of a stint against about eight minutes of overhead, so the hunting still
+    # outweighs the travelling. That ratio holds whether the character trains
+    # three skills or thirteen, which is the property worth having in a
+    # default.
+    #
+    # It binds on nothing for a character training few skills: a leg can only
+    # be as large as the cluster the width rule built, so a two-skill
+    # character never reaches this cap and never notices it.
+    #
+    # UNMEASURED against play.
     MAX_SKILLS_PER_LEG = 3
 
     # premium: the character's account tier, as LegSettings.premium reports it
@@ -56,12 +66,20 @@ module UberCombat
     # limit. Keyword rather than a third positional, because `premium`
     # already occupies that slot and a bare second boolean-looking argument
     # at a call site would be unreadable.
-    def initialize(character, zone_table, premium = false, province: nil)
+    # max_skills_per_leg: nil takes MAX_SKILLS_PER_LEG. Keyword, like
+    # province, because a bare third or fourth positional at a call site would
+    # be unreadable next to `premium`.
+    def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
       @province = province
+      @max_skills_per_leg = max_skills_per_leg || MAX_SKILLS_PER_LEG
     end
+
+    # The cap actually in force, so a diagnostic can print it rather than
+    # print the constant and be wrong for a character that overrode it.
+    attr_reader :max_skills_per_leg
 
     # The cheapest stance policy that survives the zone, or nil when neither
     # pole clears the zone's lower bound. Spread is preferred because it trains
@@ -141,7 +159,8 @@ module UberCombat
     # The pass is greedy and left to right. A skill that joins no cluster becomes
     # its own single-skill leg, which is correct but less travel-efficient.
     # Clustering is an optimisation. It must never starve a skill of its zone.
-    def build_legs(ranks, zones_by_skill, width = LEG_WIDTH_RANKS, max_skills = MAX_SKILLS_PER_LEG)
+    def build_legs(ranks, zones_by_skill, width = LEG_WIDTH_RANKS, max_skills = :default)
+      max_skills = @max_skills_per_leg if max_skills == :default
       legs = []
       remaining = ranks.keys.sort_by { |skill| -ranks[skill] }
       until remaining.empty?
