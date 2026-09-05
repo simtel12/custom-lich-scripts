@@ -472,6 +472,28 @@ RSpec.describe UberCombat::Director do
     end
   end
 
+  # A cycle is one full pass through the itinerary, however many legs that is.
+  # It is the stable unit: MAX_STINTS_PER_LEG = 1 makes one stint one leg
+  # today, but the leg COUNT moves as the skills-per-leg cap splits a cluster
+  # or a rebuild returns a different itinerary.
+  describe ".budget_spent?" do
+    it "counts stints in the default unit" do
+      expect(described_class.budget_spent?(:stints, 3, 2, 9)).to be(false)
+      expect(described_class.budget_spent?(:stints, 3, 3, 0)).to be(true)
+    end
+
+    it "counts completed passes in the cycles unit" do
+      expect(described_class.budget_spent?(:cycles, 2, 99, 1)).to be(false)
+      expect(described_class.budget_spent?(:cycles, 2, 0, 2)).to be(true)
+    end
+
+    # A typo in the argument parser must never turn a bounded request into an
+    # unbounded hunt. Stopping at zero is obvious and costs nothing.
+    it "treats an unknown unit as already spent rather than as unbounded" do
+      expect(described_class.budget_spent?(:legs, 5, 0, 0)).to be(true)
+    end
+  end
+
   describe ".safety_stop?" do
     it "is true for :health, :spirit and :dead" do
       expect([:health, :spirit, :dead].map { |reason| described_class.safety_stop?(reason) })
@@ -489,6 +511,7 @@ RSpec.describe UberCombat::Director do
   describe UberCombat::Director::Session do
     let(:bow) { leg(["Bow"], zone_key: "crossing_rats") }
     let(:brawling) { leg(["Brawling"], zone_key: "sand_beetles") }
+    let(:slings) { leg(["Slings"], zone_key: "hogs") }
 
     def world_for(*legs, **options)
       ranks = { "Bow" => 100, "Brawling" => 90 }.merge(options.delete(:ranks) || {})
@@ -582,6 +605,40 @@ RSpec.describe UberCombat::Director do
 
         expect(outcome.stopped).to eq(:no_legs)
         expect(world.trace).not_to include(:run_stint)
+      end
+    end
+
+    describe "the cycles unit" do
+      it "runs whole passes rather than a count of stints" do
+        world = world_for(bow, brawling)
+        4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
+        outcome = session_for(world).run(2, unit: :cycles)
+
+        # Two legs to a pass, so two passes is four stints.
+        expect(outcome.productive).to eq(4)
+        expect(world.overlay_calls.map { |call| call.first[:skills] })
+          .to eq([["Bow"], ["Brawling"], ["Bow"], ["Brawling"]])
+      end
+
+      # The point of the unit. A three-leg itinerary makes one pass three
+      # stints, and no stint budget names that without knowing the leg count.
+      it "follows the leg count rather than a fixed number of stints" do
+        world = world_for(bow, brawling, slings, ranks: { "Slings" => 40 })
+        3.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1, "Slings" => 1 }) }
+        outcome = session_for(world).run(1, unit: :cycles)
+
+        expect(outcome.productive).to eq(3)
+      end
+
+      # A cycle budget must not outrank the safety ladder. Five passes is a
+      # long unattended request, and the abort still ends it on the first check.
+      it "still stops on a safety reason before the passes are done" do
+        world = world_for(bow, brawling)
+        world.abort_reason = :health
+        outcome = session_for(world).run(5, unit: :cycles)
+
+        expect(outcome.stopped).to eq(:health)
+        expect(world.recoveries).to eq([:health])
       end
     end
 

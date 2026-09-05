@@ -29,6 +29,11 @@
                                `;uc-leg go N` in this same suite takes one.
                                The director chooses the legs itself and
                                rotates the itinerary as skills grow.
+    ;uc-director cycles N   -- act. N is how many FULL PASSES through the
+                               itinerary to run. A pass is however many legs
+                               the itinerary currently holds, so this is the
+                               unit that stays meaningful when the leg count
+                               changes underneath you.
     ;uc-director report     -- print the last run's stint table. In-memory
                                only in D1 (nothing is persisted; see below).
 
@@ -863,7 +868,7 @@ class UcDirector
     report_floor(world)
   end
 
-  def run(budget)
+  def run(budget, unit: :stints)
     banner
     world = DirectorWorld.new
     @world = world
@@ -891,16 +896,24 @@ class UcDirector
     end
     $UC_DIRECTOR = self
 
+    @unit = unit
     # "%d hunt(s)", not "budget %d". The old wording invited reading the
     # number as a leg, which `;uc-leg go N` in this same suite really does
     # mean. No leg count here on purpose: the itinerary does not exist yet
     # and building one for a banner would be a second build_itinerary call,
     # which the picker answers from live skills and so can answer differently.
-    DRC.message(format('-- Hunting: %d hunt(s) to run. The director picks the legs. --', budget))
+    DRC.message(
+      if unit == :cycles
+        format('-- Hunting: %d full pass(es) through the itinerary. The director picks the legs. --',
+               budget)
+      else
+        format('-- Hunting: %d hunt(s) to run. The director picks the legs. --', budget)
+      end
+    )
     DRC.message('  A stint that never reached the hunt loop does not spend the budget.', false)
     DRC.message('  ;p uc-director takes effect at the next cycle, not mid-stint.', false)
 
-    UberCombat::Director::Session.new(world).run(budget)
+    UberCombat::Director::Session.new(world).run(budget, unit: @unit)
     record_run(world)
   end
 
@@ -1064,8 +1077,24 @@ when /\Arun\z/i
   else
     UcDirector.new.run(budget.to_i)
   end
+when /\Acycles?\z/i
+  # A CYCLE is one full pass through the itinerary, however many legs that is.
+  # It is the stable unit: MAX_STINTS_PER_LEG = 1 makes one stint one leg
+  # today, but the leg COUNT moves on its own as the skills-per-leg cap splits
+  # a cluster or a rebuild returns a different itinerary -- so a stint budget
+  # chosen to mean "one cycle" quietly stops meaning it.
+  count = script.vars[2]
+  if count.nil? || count !~ /\A[1-9][0-9]*\z/
+    DRC.message('uc-director: cycles needs a number of passes. Usage: ;uc-director cycles N')
+    DRC.message('  A cycle is one full pass through the itinerary, however many legs it holds.', false)
+    DRC.message('  Use it when you mean "go round once" rather than "run this many hunts".', false)
+    DRC.message('  There is no unbounded mode. One leg is half an hour of unattended combat.', false)
+  else
+    UcDirector.new.run(count.to_i, unit: :cycles)
+  end
 when /\Areport\z/i
   UcDirector.new.report
 else
-  DRC.message("uc-director: unknown argument '#{mode}'. Usage: ;uc-director | ;uc-director run N | ;uc-director report")
+  DRC.message("uc-director: unknown argument '#{mode}'. " \
+              'Usage: ;uc-director | ;uc-director run N | ;uc-director cycles N | ;uc-director report')
 end

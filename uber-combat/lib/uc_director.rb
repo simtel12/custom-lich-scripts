@@ -348,6 +348,21 @@ module UberCombat
       Decision.new(action: :continue, reason: nil)
     end
 
+    # Has the run's budget been spent? Pure, so both units are testable without
+    # a session.
+    #
+    # An unknown unit spends IMMEDIATELY rather than running forever. A typo
+    # in the argument parser must not turn a bounded request into an unbounded
+    # hunt; stopping at zero stints is obvious and harmless, and the adapter
+    # rejects an unknown mode before it ever reaches here.
+    def self.budget_spent?(unit, budget, productive, cycles)
+      case unit
+      when :stints then productive >= budget
+      when :cycles then cycles >= budget
+      else true
+      end
+    end
+
     # Where to continue after a :reselect rebuild: the index of the first leg
     # whose skills match the leg we were just on, or 0 when that leg is gone.
     #
@@ -442,8 +457,18 @@ module UberCombat
       # budget: how many PRODUCTIVE stints to run. `;uc-director run 8` means
       # eight stints that actually hunted, not eight attempts -- a
       # non-productive stint never spends a unit (decision 7).
-      def run(budget)
+      # unit: :stints counts stints that actually hunted. :cycles counts
+      # completed passes through the itinerary.
+      #
+      # They are NOT interchangeable, even though MAX_STINTS_PER_LEG = 1 makes
+      # one stint one leg today. A cycle is however many legs the itinerary
+      # currently has, and that number moves on its own: the skills-per-leg cap
+      # splits a cluster as a character's ranks spread, and a rebuild can
+      # return a different count. So a stint budget chosen to mean "one cycle"
+      # silently stops meaning it, which is the whole reason :cycles exists.
+      def run(budget, unit: :stints)
         productive = 0
+        cycles = 0
         stopped = nil
         itinerary = @world.build_itinerary
         return finish(:no_legs, [], 0) if itinerary.legs.empty?
@@ -459,7 +484,7 @@ module UberCombat
         tracker  = nil
         stints   = []
 
-        while productive < budget
+        until Director.budget_spent?(unit, budget, productive, cycles)
           # C3. The one call in the whole loop that a `;p uc-director`
           # actually blocks on.
           @world.checkpoint
@@ -573,6 +598,7 @@ module UberCombat
             # per LEG was considered and is not what was asked for: it would
             # throw away the cycle position on every advance.
             if index.zero?
+              cycles += 1
               itinerary = @world.build_itinerary
               if itinerary.legs.empty?
                 stopped = :no_legs

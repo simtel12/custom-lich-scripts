@@ -178,6 +178,29 @@ more lot of overhead each. Raise it for cheaper cycles and a thinner share.
 A value that is not a positive whole number is ignored, and the script says so
 rather than falling back in silence.
 
+## Running the director
+
+    ;uc-director            plan only, read-only, issues nothing
+    ;uc-director run N      N stints that actually hunt
+    ;uc-director cycles N   N full passes through the itinerary
+    ;uc-director report     the last run's stint table
+
+`run` counts stints that hunted. A stint that never reached the hunt loop does
+not spend a unit, so `run 4` promises four real hunts rather than four
+attempts.
+
+`cycles` counts full passes. A pass is however many legs the itinerary holds
+at the time.
+
+Prefer `cycles` when you mean "go round once". One stint is one leg today,
+because a leg hands over after a single productive stint, but the leg COUNT
+moves on its own as `max_skills_per_leg` splits a cluster or a rebuild returns
+a different itinerary. A stint budget chosen to mean one pass quietly stops
+meaning it; a cycle budget does not.
+
+Neither form has an unbounded mode, and the count is required. One leg is half
+an hour of unattended combat.
+
 ## The data file
 
 `data/base-uc-zones.yaml` is the source of truth. It annotates
