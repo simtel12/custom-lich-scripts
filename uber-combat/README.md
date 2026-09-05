@@ -122,11 +122,32 @@ Without the flag, a **Debilitation** spell rides every leg. Debilitation is a
 multiplier. It makes the character likelier to hit, or likelier to be missed,
 and it does no damage by itself, so carrying it costs no attack time.
 
-This applies to Debilitation only. A damage spell on every leg would displace
-the leg's own training, because the overlay always sets
+That default applies to Debilitation only. A damage spell on every leg would
+displace the leg's own training, because the overlay always sets
 `prioritize_offensive_spells` and combat-trainer would cast instead of swing.
 
+`use_for_survivability: true` asks for a spell of ANY skill to ride every leg.
+Combat-trainer does not read this key, so it changes placement here and
+nothing there. Use it for a damage spell only if displacing the leg's own
+weapon training is what you want.
+
 Debilitation never occupies a `max_skills_per_leg` slot, on any leg.
+
+### The one combination to avoid
+
+`use_for_survivability: true` with `cast_only_to_train: true` contradicts
+itself. The first asks for the spell everywhere; the second asks
+combat-trainer to stop casting it once it stops teaching. Combat-trainer wins,
+because it owns the casting.
+
+Worse, its blacklist works by SKILL, not by spell
+(`combat-trainer.lic:2468`), so one sibling spell of the same skill carrying
+`cast_only_to_train` is enough to silence a survivability spell that does not
+carry it.
+
+The overlay reports both shapes as a `survivability_blacklisted` gap rather
+than dropping either flag, because dropping one would be a guess at which was
+meant.
 
 `max_skills_per_leg` is there because there is no single right value. A
 character training two or three skills wants a cap that never bites. A

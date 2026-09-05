@@ -26,7 +26,7 @@ module UberCombat
     # The reasons a gap record can carry. Kept a fixed set for the same
     # reason ZonePicker#exclusion_record's is (uc_zone_picker.rb:129-131): a
     # free-text reason invites a silent typo that reads as "no gap".
-    GAP_REASONS = [:no_weapon_entry, :unknown_spell_name].freeze
+    GAP_REASONS = [:no_weapon_entry, :unknown_spell_name, :survivability_blacklisted].freeze
 
     # A Struct, not a bare Hash, so the gap report cannot be dropped by a
     # caller who destructures only what they expect (the Itinerary
@@ -199,6 +199,8 @@ module UberCombat
     # -- a String in YAML, not the boolean -- is not read as a request to
     # carry a training-only spell onto every leg in the itinerary.
     def support_everywhere?(entry)
+      return true if entry["use_for_survivability"] == true
+
       entry["skill"] == SUPPORT_SKILL && entry["cast_only_to_train"] != true
     end
 
@@ -350,6 +352,35 @@ module UberCombat
     # table"). The "skill" key is kept on every surviving entry -- it is a
     # real key combat-trainer reads, not just our own selector (see the
     # citations on the uc_spells: param above).
+    # use_for_survivability asks for a spell to be cast for its EFFECT, on
+    # every leg. cast_only_to_train asks combat-trainer to stop casting it once
+    # it stops teaching. Both on one entry is a contradiction that resolves
+    # against the user: CT wins, because it owns the casting.
+    #
+    # And it takes the whole skill down with it, not just this entry --
+    # `@offensive_spells.reject! { |s| s['skill'] == ... }`
+    # (combat-trainer.lic:2468) -- so ONE sibling spell of the same skill
+    # carrying cast_only_to_train is enough to blacklist a survivability spell
+    # that does not carry it. That is why this checks the whole candidate list
+    # per skill rather than each entry alone.
+    #
+    # Reported rather than corrected. Silently dropping either flag would be
+    # guessing which one the person meant.
+    def survivability_conflicts(candidates)
+      wanted = candidates.select { |entry| entry["use_for_survivability"] == true }
+      return [] if wanted.empty?
+
+      training = candidates.select { |entry| entry["cast_only_to_train"] == true }
+                           .map { |entry| entry["skill"] }.uniq
+
+      wanted.select { |entry| training.include?(entry["skill"]) }.map do |entry|
+        { skill: entry["skill"], reason: :survivability_blacklisted,
+          detail: { name: entry["name"],
+                    because: "a #{entry['skill']} spell sets cast_only_to_train, and " \
+                             "combat-trainer blacklists the whole skill on a no-gain streak" } }
+      end
+    end
+
     def validate_offensive_spells(candidates)
       known = @known_spell_names.map { |name| name.to_s.downcase }
 
@@ -359,7 +390,7 @@ module UberCombat
         { skill: entry["skill"], reason: :unknown_spell_name, detail: { name: entry["name"] } }
       end
 
-      [valid, gaps]
+      [valid, gaps + survivability_conflicts(valid)]
     end
   end
 end

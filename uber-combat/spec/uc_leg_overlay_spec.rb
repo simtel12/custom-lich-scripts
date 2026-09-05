@@ -322,6 +322,69 @@ RSpec.describe UberCombat::LegOverlay do
       expect(settings.key?("offensive_spells")).to be false
     end
 
+    # use_for_survivability is a flag combat-trainer does not read, so it
+    # changes placement here and nothing there. It carries a spell of ANY skill
+    # onto every leg, not just Debilitation, because it is an explicit request
+    # rather than an inference about what the skill does.
+    it "carries a spell flagged use_for_survivability onto a leg that does not train it" do
+      catalogue = [{ "skill" => "Targeted Magic", "name" => "Fists of Faenella",
+                     "use_for_survivability" => true }]
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      settings = overlay(uc_spells: catalogue,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings["offensive_spells"].map { |entry| entry["name"] }).to eq(["Fists of Faenella"])
+    end
+
+    # The flag reaches the profile untouched. CT reads a fixed key set and
+    # this is not in it, so it is inert there and self-documenting here.
+    it "writes the flag through to the profile rather than stripping it" do
+      catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
+                     "use_for_survivability" => true }]
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      settings = overlay(uc_spells: catalogue,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings["offensive_spells"].first["use_for_survivability"]).to be(true)
+    end
+
+    # The contradiction. CT wins, because it owns the casting, so the profile
+    # is reported rather than quietly half-honoured.
+    it "reports a survivability spell whose own entry also asks CT to stop casting it" do
+      catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
+                     "use_for_survivability" => true, "cast_only_to_train" => true }]
+      leg = { skills: ["Debilitation"], zone_key: "z",
+              stance: { policy: :spread, key: "Bow" }, min_mana: nil }
+      result = overlay(uc_spells: catalogue, known_spell_names: known_spell_names).build(leg)
+
+      expect(result.gaps.map { |gap| gap[:reason] }).to include(:survivability_blacklisted)
+    end
+
+    # The nastier shape: the survivability spell is clean, and a SIBLING spell
+    # of the same skill carries cast_only_to_train. CT blacklists by skill
+    # (combat-trainer.lic:2468), so the clean one dies with it.
+    it "reports a survivability spell blacklisted by a sibling of the same skill" do
+      catalogue = [
+        { "skill" => "Debilitation", "name" => "Malediction", "use_for_survivability" => true },
+        { "skill" => "Debilitation", "name" => "Fists of Faenella", "cast_only_to_train" => true }
+      ]
+      leg = { skills: ["Debilitation"], zone_key: "z",
+              stance: { policy: :spread, key: "Bow" }, min_mana: nil }
+      result = overlay(uc_spells: catalogue, known_spell_names: known_spell_names).build(leg)
+
+      expect(result.gaps.map { |gap| gap[:reason] }).to include(:survivability_blacklisted)
+    end
+
+    it "reports no conflict when the survivability spell stands alone" do
+      catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
+                     "use_for_survivability" => true }]
+      leg = { skills: ["Debilitation"], zone_key: "z",
+              stance: { policy: :spread, key: "Bow" }, min_mana: nil }
+      result = overlay(uc_spells: catalogue, known_spell_names: known_spell_names).build(leg)
+
+      expect(result.gaps).to be_empty
+    end
+
     it "takes no constructor parameter that could switch prioritisation off" do
       expect(described_class.instance_method(:initialize).parameters.map(&:last))
         .not_to include(:prioritize_offensive_spells)
