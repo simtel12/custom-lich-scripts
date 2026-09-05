@@ -219,6 +219,52 @@ module UberCombat
       weapons(settings).empty?
     end
 
+    # Catalogue entries whose skill name is not a real skill.
+    #
+    # The valid names are a CLOSED SET, so a typo is detectable rather than
+    # merely suspicious, and detectable means it should be an error rather
+    # than a report (user, 2026-09-05). Without this check `Small Edge` reads
+    # as a deliberate decision not to train Small Edged, which is exactly what
+    # a person who typed it did not mean.
+    #
+    # weapons keys are checked against KILLING_SET rather than TRAINING_SET:
+    # Debilitation cannot be trained by swinging anything, so a weapon entry
+    # for it is a mistake too. spells entries are checked against
+    # TRAINING_SET, where Debilitation belongs.
+    #
+    # Returns [{name:, source:, suggestion:}], empty when the catalogues are
+    # clean.
+    def self.unknown_skill_names(settings)
+      bad = weapons(settings).keys.map(&:to_s)
+                             .reject { |name| Character::KILLING_SET.include?(name) }
+                             .map { |name| { name: name, source: "weapons" } }
+
+      bad + (spells(settings) || []).map { |entry| entry["skill"].to_s }
+                                    .reject { |name| Character::TRAINING_SET.include?(name) }
+                                    .map { |name| { name: name, source: "spells" } }
+    end
+
+    # The closest real skill name, or nil when nothing is close enough to be
+    # worth guessing at. Cheap on purpose: a shared case-insensitive prefix
+    # catches the typos people actually make -- a dropped letter, a missing
+    # plural, a wrong ending -- and does not invent a suggestion for a name
+    # that is simply not a skill.
+    MIN_SUGGESTION_PREFIX = 4
+
+    def self.closest_skill_name(name)
+      target = name.to_s.downcase
+      best = Character::TRAINING_SET.max_by { |known| shared_prefix(target, known.downcase) }
+      return nil if best.nil?
+
+      shared_prefix(target, best.downcase) >= MIN_SUGGESTION_PREFIX ? best : nil
+    end
+
+    def self.shared_prefix(one, two)
+      limit = [one.length, two.length].min
+      (0...limit).find { |i| one[i] != two[i] } || limit
+    end
+    private_class_method :shared_prefix
+
     # Names of the OLD top-level keys a profile still carries. The caller
     # prints these as a warning.
     #

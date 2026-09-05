@@ -118,10 +118,21 @@ and not a gap: the skill never reaches a leg at all, so nothing refuses to run.
 A skill named only in `spells` counts too, since a skill can be trained by
 casting rather than by swinging.
 
-A skill the character HAS ranks in but never named is reported once per run as
-`not_configured`. That is information, not a fault. It exists so that a typo
-in a key -- `Small Edge` for `Small Edged` -- looks different from a
-deliberate omission, instead of silently never training.
+A **misspelled** skill name is an error, and the scripts stop. The valid names
+are a closed set, so `Small Edge` is detectably not a decision to skip
+`Small Edged`. The message names the bad key, says which catalogue it came
+from, and suggests the real name when one is close:
+
+    uc: uc_settings names skills that do not exist. Fix these and run again:
+        weapons: Small Edge   did you mean Small Edged
+
+`Debilitation` is rejected as a `weapons` key even though the name is real. It
+cannot be trained by swinging anything, so a weapon entry for it is a mistake.
+It belongs in `spells`.
+
+A skill the character has ranks in but never named at all is reported once per
+run as `not_configured`. That is information, not a fault, and it refuses
+nothing.
 
 An **empty** `weapons` catalogue is an error, and the scripts stop. Omitting a
 weapon is a choice; omitting all of them leaves nothing to hunt with.

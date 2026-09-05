@@ -178,6 +178,63 @@ RSpec.describe UberCombat::LegSettings do
     end
   end
 
+  describe ".unknown_skill_names" do
+    it "is empty for catalogues that name only real skills" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Small Edged" => "scimitar" },
+                           "spells"  => [{ "skill" => "Debilitation", "name" => "Malediction" }] }
+      )
+
+      expect(described_class.unknown_skill_names(settings)).to be_empty
+    end
+
+    it "names a misspelled weapon key and where it came from" do
+      settings = get_settings_shape("uc_settings" => { "weapons" => { "Small Edge" => "scimitar" } })
+
+      expect(described_class.unknown_skill_names(settings))
+        .to eq([{ name: "Small Edge", source: "weapons" }])
+    end
+
+    it "names a misspelled spell skill" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Bow" => "shortbow" },
+                           "spells"  => [{ "skill" => "Debilitaton", "name" => "Malediction" }] }
+      )
+
+      expect(described_class.unknown_skill_names(settings))
+        .to eq([{ name: "Debilitaton", source: "spells" }])
+    end
+
+    # Debilitation cannot be trained by swinging anything, so a weapon entry
+    # for it is a mistake even though the NAME is a real skill. That is why
+    # weapons is checked against KILLING_SET and spells against TRAINING_SET.
+    it "rejects Debilitation as a weapons key while accepting it as a spell skill" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Debilitation" => "scimitar" },
+                           "spells"  => [{ "skill" => "Debilitation", "name" => "Malediction" }] }
+      )
+
+      expect(described_class.unknown_skill_names(settings))
+        .to eq([{ name: "Debilitation", source: "weapons" }])
+    end
+  end
+
+  describe ".closest_skill_name" do
+    it "suggests the real skill behind a dropped letter" do
+      expect(described_class.closest_skill_name("Small Edge")).to eq("Small Edged")
+    end
+
+    it "ignores case" do
+      expect(described_class.closest_skill_name("brawlng")).to eq("Brawling")
+    end
+
+    # No guess is better than a wrong guess. A name that is not a near miss of
+    # anything gets no suggestion at all.
+    it "suggests nothing for a name that resembles no skill" do
+      expect(described_class.closest_skill_name("Cooking")).to be_nil
+    end
+  end
+
   describe ".no_weapons?" do
     it "is true for an absent weapons catalogue" do
       expect(described_class.no_weapons?(get_settings_shape("uc_settings" => {}))).to be(true)

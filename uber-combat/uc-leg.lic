@@ -89,6 +89,7 @@ class UcLegReport
     # fail: it defaults to false and silently gates a premium character out of
     # the zones they paid for (uc_zone_picker.rb#initialize).
     refuse_without_weapons(settings)
+    refuse_unknown_skills(settings)
     warn_about_max_skills(settings)
     @picker = UberCombat::ZonePicker.new(
       @character, @zone_table,
@@ -150,6 +151,23 @@ class UcLegReport
   end
 
   private
+
+  # A skill name that is not a real skill is a TYPO, not a decision. The valid
+  # names are a closed set, so this is checkable, and leaving it uncheckable
+  # would mean `Small Edge` reads as "I do not train Small Edged" -- the one
+  # thing the person who typed it did not mean.
+  def refuse_unknown_skills(settings)
+    unknown = UberCombat::LegSettings.unknown_skill_names(settings)
+    return if unknown.empty?
+
+    DRC.message('uc: uc_settings names skills that do not exist. Fix these and run again:')
+    unknown.each do |row|
+      guess = UberCombat::LegSettings.closest_skill_name(row[:name])
+      DRC.message(format('    %s: %s%s', row[:source], row[:name],
+                         guess ? format('   did you mean %s', guess) : ''), false)
+    end
+    exit
+  end
 
   # An empty weapons catalogue is the one catalogue error that stays fatal.
   # Omitting a weapon means "I do not train that one"; omitting all of them
