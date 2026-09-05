@@ -108,6 +108,7 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 | `premium` | The account tier. Defaults to non-premium, which gates conservatively |
 | `in_province_only` | Stay inside one province, for example `Zoluren`. Blank or absent means no limit |
 | `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
+| `hunt_duration_minutes` | Minutes to hunt in one stint. Absent means 30 |
 
 ### How a spell reaches a leg
 
@@ -177,6 +178,26 @@ more lot of overhead each. Raise it for cheaper cycles and a thinner share.
 
 A value that is not a positive whole number is ignored, and the script says so
 rather than falling back in silence.
+
+### Testing a cycle quickly
+
+At the default of 30 minutes a three-leg pass takes about two hours, which is
+a long wait to find out whether rotation works. Set the duration low, watch a
+whole pass, then set it back:
+
+```yaml
+uc_settings:
+  hunt_duration_minutes: 5
+```
+
+The stint TIMEOUT does not shrink with it, and must not. The timeout bounds
+the untimed parts of a stint -- tannery trip, blocking restock, travel to the
+zone, walk home -- and those cost the same whether the hunt is five minutes or
+fifty. A five-minute stint still takes about thirteen minutes of wall clock,
+and nearly all of the saving is in the hunting.
+
+The banner prints the value in force on every run, so a low test value left in
+a profile is visible rather than silently making the character train badly.
 
 ## Running the director
 

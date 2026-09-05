@@ -608,6 +608,45 @@ RSpec.describe UberCombat::Director do
       end
     end
 
+    describe "a configured hunt duration" do
+      # The point of the setting: watch a whole cycle in minutes instead of
+      # hours. The overlay and the announce must both carry the character's
+      # number, or hunting-buddy would be told 30 while the report said 5.
+      it "writes the configured duration into the overlay" do
+        world = world_for(bow)
+        session_for(world, duration_minutes: 5).run(1)
+
+        expect(world.overlay_calls.map(&:last)).to all(eq(5))
+      end
+
+      it "reports the configured duration on the leg it selects" do
+        world = world_for(bow)
+        session_for(world, duration_minutes: 5).run(1)
+
+        expect(world.event(:leg_selected).first[:duration]).to eq(5)
+      end
+
+      # THE TIMEOUT MUST NOT SHRINK WITH IT. It bounds the untimed travel and
+      # restock around the hunt, and those cost the same at five minutes as at
+      # fifty -- a five-minute stint still takes about thirteen minutes of wall
+      # clock. A timeout scaled down with the duration would abort every stint.
+      it "keeps the slack in the timeout when the duration is small" do
+        world = world_for(bow)
+        session_for(world, duration_minutes: 5).run(1)
+
+        expect(world.timeouts).to all(eq(UberCombat::Director.timeout_for(5)))
+        expect(world.timeouts.first).to be > (UberCombat::Director::STINT_SLACK_SECONDS)
+      end
+
+      it "falls back to DURATION_MINUTES when given nil" do
+        world = world_for(bow)
+        session_for(world, duration_minutes: nil).run(1)
+
+        expect(world.overlay_calls.map(&:last))
+          .to all(eq(UberCombat::Director::DURATION_MINUTES))
+      end
+    end
+
     describe "the cycles unit" do
       it "runs whole passes rather than a count of stints" do
         world = world_for(bow, brawling)

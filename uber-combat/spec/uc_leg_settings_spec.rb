@@ -144,6 +144,46 @@ RSpec.describe UberCombat::LegSettings do
     end
   end
 
+  describe ".hunt_duration_minutes" do
+    it "reads a positive whole number" do
+      settings = get_settings_shape("uc_settings" => { "hunt_duration_minutes" => 5 })
+
+      expect(described_class.hunt_duration_minutes(settings)).to eq(5)
+    end
+
+    it "reads an absent setting as the director default" do
+      expect(described_class.hunt_duration_minutes(get_settings_shape("uc_settings" => {}))).to be_nil
+    end
+
+    # Zero taken literally would end every stint on its first check:
+    # hunting-buddy tests `(counter / 60) >= duration` (hunting-buddy.lic:622).
+    # Every leg would then be skipped after two failures and the run would stop
+    # having taught nothing.
+    it "reads zero as the default rather than as an instant stint" do
+      settings = get_settings_shape("uc_settings" => { "hunt_duration_minutes" => 0 })
+
+      expect(described_class.hunt_duration_minutes(settings)).to be_nil
+    end
+
+    it "reads a quoted number as the default" do
+      settings = get_settings_shape("uc_settings" => { "hunt_duration_minutes" => "5" })
+
+      expect(described_class.hunt_duration_minutes(settings)).to be_nil
+    end
+  end
+
+  describe ".bad_hunt_duration_minutes?" do
+    it "is false when the key is absent" do
+      expect(described_class.bad_hunt_duration_minutes?(get_settings_shape("uc_settings" => {}))).to be(false)
+    end
+
+    it "is true for a value that is present but unusable" do
+      settings = get_settings_shape("uc_settings" => { "hunt_duration_minutes" => 0 })
+
+      expect(described_class.bad_hunt_duration_minutes?(settings)).to be(true)
+    end
+  end
+
   describe ".bad_max_skills_per_leg?" do
     it "is false when the key is absent, because that is not a mistake" do
       expect(described_class.bad_max_skills_per_leg?(get_settings_shape("uc_settings" => {}))).to be(false)

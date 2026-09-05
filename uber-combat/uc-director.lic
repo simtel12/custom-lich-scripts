@@ -159,6 +159,7 @@ class DirectorWorld
     # and leaving the argument off silently gates a premium character out of
     # the zones they paid for.
     warn_about_max_skills(settings)
+    warn_about_duration(settings)
     @picker = UberCombat::ZonePicker.new(
       @character, @zone_table,
       UberCombat::LegSettings.premium(settings),
@@ -550,6 +551,17 @@ class DirectorWorld
                 'Ignoring it and using the default.')
   end
 
+  # Zero is the one that would really hurt if taken literally: hunting-buddy
+  # checks `(counter / 60) >= duration` (hunting-buddy.lic:622), which is true
+  # on the first pass, so every stint would end at once having taught nothing
+  # and every leg would be skipped after two failures.
+  def warn_about_duration(settings)
+    return unless UberCombat::LegSettings.bad_hunt_duration_minutes?(settings)
+
+    DRC.message('uc-director: hunt_duration_minutes must be a positive whole number. ' \
+                'Ignoring it and using the default.')
+  end
+
   def note(reason, value = nil)
     @abort_detail = value
     reason
@@ -913,7 +925,8 @@ class UcDirector
     DRC.message('  A stint that never reached the hunt loop does not spend the budget.', false)
     DRC.message('  ;p uc-director takes effect at the next cycle, not mid-stint.', false)
 
-    UberCombat::Director::Session.new(world).run(budget, unit: @unit)
+    session = UberCombat::Director::Session.new(world, duration_minutes: duration_minutes)
+    session.run(budget, unit: @unit)
     record_run(world)
   end
 
@@ -949,8 +962,19 @@ class UcDirector
   # and reads live skills (uc_zone_picker.rb:6-10), so two calls are two
   # answers, and a banner that disagrees with the itinerary printed under it is
   # worse than a banner with one less number on it.
+  # The EFFECTIVE duration, not the constant. A character that set
+  # hunt_duration_minutes must see its own number here, because this banner is
+  # the only place a low test value left in a profile becomes visible again --
+  # a five-minute hunt otherwise looks like a working thirty-minute one that
+  # simply taught very little.
+  def duration_minutes
+    @duration_minutes ||=
+      UberCombat::LegSettings.hunt_duration_minutes(get_settings) ||
+      UberCombat::Director::DURATION_MINUTES
+  end
+
   def banner
-    duration = UberCombat::Director::DURATION_MINUTES
+    duration = duration_minutes
     DRC.message(format('=== uc-director: %s, duration=%d min, timeout=%d s, health floor %d ===',
                        XMLData.name, duration,
                        UberCombat::Director.timeout_for(duration),
@@ -962,7 +986,7 @@ class UcDirector
   # invariant-guard) possibility and a plan that crashed would tell a person
   # less than one that named the error.
   def plan_payload(world, itinerary, leg)
-    duration = UberCombat::Director::DURATION_MINUTES
+    duration = duration_minutes
     payload = { itinerary: itinerary, leg_index: 0, leg: leg, duration: duration,
                 timeout: UberCombat::Director.timeout_for(duration),
                 overlay: nil, decision: nil, path: world.overlay_path }

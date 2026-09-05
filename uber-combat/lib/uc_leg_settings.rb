@@ -158,6 +158,40 @@ module UberCombat
       !raw.nil? && max_skills_per_leg(settings).nil?
     end
 
+    # Minutes to hunt in one stint, or nil to take the director's default.
+    #
+    # Mainly here to make a cycle testable in minutes instead of hours: at the
+    # default of 30 a three-leg pass is about two hours, which is a long wait
+    # to find out whether rotation works. Set it low, watch a whole pass, set
+    # it back.
+    #
+    # The stint TIMEOUT does not shrink with it, and must not. The timeout
+    # bounds the untimed parts -- tannery trip, blocking restock, travel, walk
+    # home -- and those cost the same whether the hunt is five minutes or
+    # fifty. A five-minute stint still takes about thirteen minutes of wall
+    # clock, and nearly all of the saving is in the hunting.
+    #
+    # Same fail-open-and-report shape as .max_skills_per_leg: anything that is
+    # not a positive whole number reads as nil, and the caller says so. Zero
+    # would be the worst reading to take literally, since hunting-buddy's check
+    # is `(counter / 60) >= duration` (hunting-buddy.lic:622) and that is true
+    # on its first pass -- every stint would end instantly having taught
+    # nothing, and every leg would be skipped for two failures.
+    def self.hunt_duration_minutes(settings)
+      value = uc_settings(settings)["hunt_duration_minutes"]
+      return nil unless value.is_a?(Integer)
+      return nil unless value.positive?
+
+      value
+    end
+
+    # Present but unusable, so a caller can warn. A missing key is not a
+    # mistake and must never warn.
+    def self.bad_hunt_duration_minutes?(settings)
+      raw = uc_settings(settings)["hunt_duration_minutes"]
+      !raw.nil? && hunt_duration_minutes(settings).nil?
+    end
+
     # Names of the OLD top-level keys a profile still carries. The caller
     # prints these as a warning.
     #

@@ -448,11 +448,22 @@ module UberCombat
       # it -- but at these numbers the cap subsumes it, which is deliberate:
       # a leg that taught nothing for two stints and a leg that taught well
       # for two stints should both hand over, and for the same reason.
-      def initialize(world, barren_limit: BARREN_LIMIT, stint_cap: MAX_STINTS_PER_LEG)
+      # duration_minutes is injectable for a real reason, not only for tests:
+      # a character can set hunt_duration_minutes to watch a whole cycle in
+      # minutes instead of hours. The stint TIMEOUT deliberately does not
+      # shrink with it -- it bounds the untimed travel and restock around the
+      # hunt, and those cost the same at five minutes as at fifty.
+      def initialize(world, barren_limit: BARREN_LIMIT, stint_cap: MAX_STINTS_PER_LEG,
+                     duration_minutes: DURATION_MINUTES)
         @world = world
         @barren_limit = barren_limit
         @stint_cap = stint_cap
+        @duration_minutes = duration_minutes || DURATION_MINUTES
       end
+
+      # The duration actually in force, so a caller can report it rather than
+      # print the constant and be wrong for a character that overrode it.
+      attr_reader :duration_minutes
 
       # budget: how many PRODUCTIVE stints to run. `;uc-director run 8` means
       # eight stints that actually hunted, not eight attempts -- a
@@ -504,9 +515,9 @@ module UberCombat
           end
 
           leg = itinerary.legs[index]
-          timeout = Director.timeout_for(DURATION_MINUTES)
+          timeout = Director.timeout_for(@duration_minutes)
           @world.announce(:leg_selected, leg_index: index, count: itinerary.legs.size, leg: leg,
-                                         duration: DURATION_MINUTES, timeout: timeout)
+                                         duration: @duration_minutes, timeout: timeout)
 
           write = write_overlay(leg)
           case write.first
@@ -673,7 +684,7 @@ module UberCombat
       # true the reported reason is :gaps and the director must not infer
       # that the path is clear.
       def write_overlay(leg)
-        overlay = @world.overlay_for(leg, duration: DURATION_MINUTES)
+        overlay = @world.overlay_for(leg, duration: @duration_minutes)
         result  = @world.write_overlay(overlay)
         return [:ok] if result.written
         return [:refused, :gaps, overlay.gaps] if result.reason == :gaps
