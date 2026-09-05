@@ -247,8 +247,13 @@ RSpec.describe UberCombat::Director do
     { rank: rank, mindstate: mindstate }
   end
 
-  def session_for(world)
-    UberCombat::Director::Session.new(world)
+  # limits are passthrough ONLY so a test can isolate one rotation rule.
+  # MAX_STINTS_PER_LEG is 2 and BARREN_LIMIT is 3, and the cap counts every
+  # productive stint while barren counts only gainless ones, so in production
+  # the cap always fires first. A test for the barren backstop must therefore
+  # lift the cap out of the way, or it is really testing the cap again.
+  def session_for(world, **limits)
+    UberCombat::Director::Session.new(world, **limits)
   end
 
   describe ".timeout_for" do
@@ -393,16 +398,24 @@ RSpec.describe UberCombat::Director do
       UberCombat::LegTracker::Verdict.new(status: status)
     end
 
+    # decide returns a Decision(action:, reason:), not a bare Symbol, so the
+    # report can say WHY a leg ended: four rules now reach :advance and they
+    # mean different things to a person reading the log. These examples assert
+    # the action, and the two rules with a director-owned reason assert that
+    # too, since the reason is the only thing distinguishing them.
     it "returns :advance for a tracker :advance verdict" do
-      expect(described_class.decide(verdict(:advance), 0, 3)).to eq(:advance)
+      expect(described_class.decide(verdict(:advance), 0, 3).action).to eq(:advance)
     end
 
     it "returns :advance when the barren count reaches the limit" do
-      expect(described_class.decide(verdict(:continue), 3, 3)).to eq(:advance)
+      decision = described_class.decide(verdict(:continue), 3, 3)
+
+      expect(decision.action).to eq(:advance)
+      expect(decision.reason).to eq(:no_gain_limit)
     end
 
     it "prefers :advance over :reselect when both apply" do
-      expect(described_class.decide(verdict(:advance), 0, 3)).to eq(:advance)
+      expect(described_class.decide(verdict(:advance), 0, 3).action).to eq(:advance)
     end
 
     # The livelock guard, section 5.4. LegTracker's :reselect is sticky and a
@@ -410,15 +423,38 @@ RSpec.describe UberCombat::Director do
     # first would let a character whose defences keep rising rebuild, reset
     # barren, hunt, rebuild again -- and never advance a barren leg.
     it "prefers the barren backstop over :reselect" do
-      expect(described_class.decide(verdict(:reselect), 3, 3)).to eq(:advance)
+      expect(described_class.decide(verdict(:reselect), 3, 3).action).to eq(:advance)
     end
 
     it "returns :reselect for a sticky reselect verdict below the barren limit" do
-      expect(described_class.decide(verdict(:reselect), 2, 3)).to eq(:reselect)
+      expect(described_class.decide(verdict(:reselect), 2, 3).action).to eq(:reselect)
+    end
+
+    # The stint cap, added 2026-09-05. BARREN_LIMIT only counts stints that
+    # gained nothing, so a leg gaining a rank every stint resets it forever and
+    # holds the character until `outgrown` fires. The cap is the upper bound
+    # that stops leg 1 starving legs 2..N of backtraining time.
+    it "returns :advance when the leg has run its stint cap" do
+      decision = described_class.decide(verdict(:continue), 0, 3, 2, 2)
+
+      expect(decision.action).to eq(:advance)
+      expect(decision.reason).to eq(:stint_cap)
+    end
+
+    it "does not advance on the cap while the leg is below it" do
+      expect(described_class.decide(verdict(:continue), 0, 3, 1, 2).action).to eq(:continue)
+    end
+
+    # Same livelock reasoning as the barren guard above, and the same fix. A
+    # reselect resumes the leg with the SAME skills and resets the per-index
+    # counters, so a cap checked after :reselect would restart from zero every
+    # time and never fire for a character whose defences are rising.
+    it "prefers the stint cap over :reselect" do
+      expect(described_class.decide(verdict(:reselect), 0, 3, 2, 2).action).to eq(:advance)
     end
 
     it "returns :continue otherwise" do
-      expect(described_class.decide(verdict(:continue), 1, 3)).to eq(:continue)
+      expect(described_class.decide(verdict(:continue), 1, 3).action).to eq(:continue)
     end
   end
 
@@ -460,9 +496,13 @@ RSpec.describe UberCombat::Director do
     end
 
     describe "the loop" do
-      it "builds the itinerary exactly once when nothing reselects" do
+      # Purpose: no GRATUITOUS rebuild. The budget stops short of the stint
+      # cap on purpose, because a completed cycle is now a rebuild trigger in
+      # its own right and a single-leg itinerary makes every advance a wrap.
+      # "rebuilds the itinerary once every leg has had its turn" covers that.
+      it "builds the itinerary exactly once when neither a cycle nor a reselect completes" do
         world = world_for(bow)
-        session_for(world).run(2)
+        session_for(world).run(1)
 
         expect(world.itinerary_calls).to eq(1)
       end
@@ -567,14 +607,14 @@ RSpec.describe UberCombat::Director do
         world.script_stint(ranks: { "Bow" => 60 })
         session_for(world).run(2)
 
-        expect(world.event(:verdict).first[:decision]).to eq(:advance)
+        expect(world.event(:verdict).first[:decision].action).to eq(:advance)
         expect(world.overlay_calls.map { |call| call.first[:skills] }).to eq([["Bow"], ["Brawling"]])
       end
 
       # The primary rotation mechanism in D1 (correction C2), not a safety net.
       it "advances after BARREN_LIMIT productive stints with no rank gain" do
         world = world_for(bow, brawling)
-        session_for(world).run(4)
+        session_for(world, stint_cap: nil).run(4)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] })
           .to eq([["Bow"], ["Bow"], ["Bow"], ["Brawling"]])
@@ -586,7 +626,7 @@ RSpec.describe UberCombat::Director do
              .script_stint
              .script_stint(ranks: { "Bow" => 2 })
              .script_stint
-        session_for(world).run(4)
+        session_for(world, stint_cap: nil).run(4)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] }).to all(eq(["Bow"]))
       end
@@ -604,7 +644,7 @@ RSpec.describe UberCombat::Director do
         session_for(world).run(2)
 
         expect(world.itinerary_calls).to eq(2)
-        expect(world.event(:verdict).first[:decision]).to eq(:reselect)
+        expect(world.event(:verdict).first[:decision].action).to eq(:reselect)
       end
 
       it "resumes on the same leg after a rebuild when that leg still exists" do
@@ -645,10 +685,52 @@ RSpec.describe UberCombat::Director do
 
       it "wraps from the last leg back to the first" do
         world = world_for(bow, brawling)
-        session_for(world).run(7)
+        session_for(world, stint_cap: nil).run(7)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] })
           .to eq([["Bow"], ["Bow"], ["Bow"], ["Brawling"], ["Brawling"], ["Brawling"], ["Bow"]])
+      end
+
+      # The starvation fix (user, 2026-09-05). Without the cap a leg that
+      # gains a rank every stint resets the barren count forever and holds the
+      # character until `outgrown` fires, which for Zurvan's leg 1 was six
+      # ranks away while legs 2 and 3 never ran at all.
+      it "hands over after MAX_STINTS_PER_LEG productive stints even while gaining" do
+        world = world_for(bow, brawling)
+        4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
+        session_for(world).run(4)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] })
+          .to eq([["Bow"], ["Bow"], ["Brawling"], ["Brawling"]])
+      end
+
+      it "names the stint cap as the reason it handed over" do
+        world = world_for(bow, brawling)
+        2.times { world.script_stint(ranks: { "Bow" => 1 }) }
+        session_for(world).run(2)
+
+        expect(world.event(:verdict).last[:decision].reason).to eq(:stint_cap)
+      end
+
+      # A COMPLETED CYCLE rebuilds, not every advance (user, 2026-09-05). The
+      # picker reads live skills, so a cycle's hunting can move a leg past its
+      # zone or open a better one, and without this the run keeps enacting an
+      # itinerary computed from ranks the character had hours ago.
+      it "rebuilds the itinerary once every leg has had its turn" do
+        world = world_for(bow, brawling)
+        4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
+        session_for(world).run(4)
+
+        # One build at the start, one more after Brawling completes the cycle.
+        expect(world.itinerary_calls).to eq(2)
+      end
+
+      it "does not rebuild before the cycle completes" do
+        world = world_for(bow, brawling)
+        2.times { world.script_stint(ranks: { "Bow" => 1 }) }
+        session_for(world).run(2)
+
+        expect(world.itinerary_calls).to eq(1)
       end
     end
 

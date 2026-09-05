@@ -705,12 +705,24 @@ class DirectorWorld
     DRC.message('  Classification above came from elapsed time and skill movement only.', false)
   end
 
+  # The decision is a Director::Decision(action:, reason:), not a bare Symbol.
+  # Printing the struct itself would put "#<struct ...>" through DRC.message,
+  # which strips anything shaped like a tag -- so the one line saying why a leg
+  # ended would come out mangled. The reason is the point of the line: four
+  # separate rules reach :advance and they mean different things to a reader.
+  # :rank_max_exceeded is success, :mindlocked is success, :no_gain_limit is a
+  # zone that stopped paying, and :stint_cap is a deliberate hand-off so the
+  # other legs get their turn.
   def render_verdict(data)
     verdict = data[:verdict]
     reason = verdict.respond_to?(:reason) ? verdict.reason : nil
     status = verdict.respond_to?(:status) ? verdict.status : verdict
-    DRC.message(format('  tracker=%s%s  decision=%s',
-                       status, reason ? format(' (%s)', reason) : '', data[:decision]), false)
+    decision = data[:decision]
+    action = decision.respond_to?(:action) ? decision.action : decision
+    why = decision.respond_to?(:reason) ? decision.reason : nil
+    DRC.message(format('  tracker=%s%s  decision=%s%s',
+                       status, reason ? format(' (%s)', reason) : '',
+                       action, why ? format(' (%s)', why) : ''), false)
   end
 
   # The one report every run ends with. It names the reason, and for the

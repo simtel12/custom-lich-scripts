@@ -124,6 +124,30 @@ module UberCombat
     # two is a pattern (decision 7's "two consecutive failures").
     MAX_LEG_FAILURES = 2
 
+    # PRODUCTIVE stints one leg may run before the director moves on, whether
+    # or not anything says it is finished.
+    #
+    # BARREN_LIMIT cannot do this job, because it only counts stints that
+    # gained NOTHING. A leg that gains a rank every stint resets it every
+    # time, so a leg still inside its band holds the character until it is
+    # outgrown -- and `outgrown` needs the leading skill to pass the zone's
+    # rank_max. Live case (user, 2026-09-05): Zurvan's leg 1 is Targeted
+    # Magic at rank 84 in a 50-90 zone, so six ranks of gaining stints stand
+    # between it and its only exit, while legs 2 and 3 hold skills at ranks 11
+    # to 30 that never get a turn. Backtraining starves exactly this way.
+    #
+    # Mindlock remains the good early exit. This is the upper bound for when
+    # mindlock does not fire -- and in D1 it usually does not, because the
+    # director samples mindstate after hunting-buddy has walked home and let
+    # it drain into ranks (spec correction C2).
+    #
+    # 2 at DURATION_MINUTES = 30 is one hour per leg, so a three-leg itinerary
+    # cycles in about three hours plus travel. The first measured stint took a
+    # skill from mindstate 0 to 25 of the 34 that means locked, so a second
+    # stint is roughly where a leg stops paying and a third would mostly
+    # waste. UNMEASURED beyond that single sample.
+    MAX_STINTS_PER_LEG = 2
+
     # The stop reasons that mean the CHARACTER is in trouble, as opposed to
     # the run merely being over or the configuration being wrong. Only these
     # run the recovery (world.recover -> gosafe). The list is exactly the
@@ -290,13 +314,28 @@ module UberCombat
     # again -- and the barren backstop would never reach its limit. That is a
     # livelock in which a barren leg is never advanced.
     #
+    # THE STINT CAP MUST ALSO OUTRANK :reselect, for the same shape of reason.
+    # A reselect rebuilds and then resumes the leg with the same skills
+    # (resume_index below), which would return to the very leg the cap just
+    # ruled had taken its turn -- and a rebuild resets the per-index counters,
+    # so the cap would restart from zero each time. A character whose defences
+    # are rising would hold leg 1 forever.
+    #
+    # Returns a Decision, not a bare Symbol, so the report can say WHY a leg
+    # ended. Four rules now reach :advance and they mean different things to a
+    # person reading the log: outgrown is success, mindlock is success, barren
+    # is a zone that stopped paying, and the cap is a deliberate hand-off.
+    #
     # verdict may be nil so the function is total; the loop always has one.
-    def self.decide(verdict, barren_count, limit)
-      return :advance if verdict && verdict.status == :advance
-      return :advance if barren_count >= limit
-      return :reselect if verdict && verdict.status == :reselect
+    Decision = Struct.new(:action, :reason, keyword_init: true)
 
-      :continue
+    def self.decide(verdict, barren_count, limit, leg_stints = 0, cap = MAX_STINTS_PER_LEG)
+      return Decision.new(action: :advance, reason: verdict.reason) if verdict && verdict.status == :advance
+      return Decision.new(action: :advance, reason: :no_gain_limit) if barren_count >= limit
+      return Decision.new(action: :advance, reason: :stint_cap) if cap && leg_stints >= cap
+      return Decision.new(action: :reselect, reason: verdict.reason) if verdict && verdict.status == :reselect
+
+      Decision.new(action: :continue, reason: nil)
     end
 
     # Where to continue after a :reselect rebuild: the index of the first leg
@@ -373,8 +412,21 @@ module UberCombat
       # productive: how many of those spent a budget unit.
       Outcome = Struct.new(:stopped, :detail, :stints, :productive, keyword_init: true)
 
-      def initialize(world)
+      # The two rotation limits are injectable ONLY so each can be exercised
+      # on its own. Production always takes the defaults.
+      #
+      # They are not independent at the shipped values: MAX_STINTS_PER_LEG is
+      # 2 and BARREN_LIMIT is 3, and the cap counts every productive stint
+      # while barren counts only the gainless ones, so the cap ALWAYS reaches
+      # its limit first and the barren backstop can never fire. Barren is not
+      # dead code -- it is the earlier exit whenever the cap is raised above
+      # it -- but at these numbers the cap subsumes it, which is deliberate:
+      # a leg that taught nothing for two stints and a leg that taught well
+      # for two stints should both hand over, and for the same reason.
+      def initialize(world, barren_limit: BARREN_LIMIT, stint_cap: MAX_STINTS_PER_LEG)
         @world = world
+        @barren_limit = barren_limit
+        @stint_cap = stint_cap
       end
 
       # budget: how many PRODUCTIVE stints to run. `;uc-director run 8` means
@@ -390,6 +442,10 @@ module UberCombat
         refused  = {}          # leg index -> Symbol reason; the leg is out for this run
         failures = Hash.new(0) # leg index -> consecutive failed stints
         barren   = Hash.new(0) # leg index -> consecutive productive stints with no rank gain
+        # leg index -> productive stints on this leg since it last became
+        # current. Reset on every advance and discarded on every rebuild,
+        # because both make the index mean a different leg.
+        leg_stints = Hash.new(0)
         tracker  = nil
         stints   = []
 
@@ -485,15 +541,42 @@ module UberCombat
           # observe_fight_end is NEVER called -- D1 has no fight boundary, so
           # there is no seam that fires at the end of a fight until D2's
           # plugin sits on hunting-buddy.lic:582.
+          leg_stints[index] += 1
           verdict  = tracker.observe_tick
-          decision = Director.decide(verdict, barren[index], BARREN_LIMIT)
+          decision = Director.decide(verdict, barren[index], @barren_limit,
+                                     leg_stints[index], @stint_cap)
           @world.announce(:verdict, leg_index: index, verdict: verdict, decision: decision)
 
-          case decision
+          case decision.action
           when :advance
-            barren[index] = 0
+            barren[index]     = 0
+            leg_stints[index] = 0
             tracker = nil
             index   = Director.wrap(index + 1, itinerary.legs.size)
+
+            # A WRAP MEANS EVERY LEG HAS HAD ITS TURN, so rebuild before
+            # starting the next cycle (user, 2026-09-05). The picker reads
+            # live skills, so a cycle's worth of hunting can have moved a leg
+            # past its zone, opened a better zone, or changed a stance policy
+            # -- and without this the run would keep enacting an itinerary
+            # computed from the ranks the character had hours ago. Rebuilding
+            # per LEG was considered and is not what was asked for: it would
+            # throw away the cycle position on every advance.
+            if index.zero?
+              itinerary = @world.build_itinerary
+              if itinerary.legs.empty?
+                stopped = :no_legs
+                break
+              end
+
+              # Index 0 of the NEW itinerary, not resume_index: a completed
+              # cycle is finished business, and build_legs emits legs in
+              # descending leader rank, so 0 is the top of a fresh rotation.
+              refused    = {}
+              failures   = Hash.new(0)
+              barren     = Hash.new(0)
+              leg_stints = Hash.new(0)
+            end
           when :reselect
             itinerary = @world.build_itinerary
             if itinerary.legs.empty?
@@ -504,11 +587,12 @@ module UberCombat
             # Every index-keyed map names a position in an array that no
             # longer exists, so all three are discarded rather than carried
             # across the rebuild.
-            index    = Director.resume_index(itinerary, leg)
-            refused  = {}
-            failures = Hash.new(0)
-            barren   = Hash.new(0)
-            tracker  = nil
+            index      = Director.resume_index(itinerary, leg)
+            refused    = {}
+            failures   = Hash.new(0)
+            barren     = Hash.new(0)
+            leg_stints = Hash.new(0)
+            tracker    = nil
           end
         end
 
