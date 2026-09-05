@@ -144,6 +144,57 @@ RSpec.describe UberCombat::LegSettings do
     end
   end
 
+  describe ".trainable_skills" do
+    it "names every skill in the weapons catalogue" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Small Edged" => "scimitar", "Bow" => "shortbow" } }
+      )
+
+      expect(described_class.trainable_skills(settings)).to match_array(["Small Edged", "Bow"])
+    end
+
+    # A skill can be trained by casting rather than by swinging, so a spell
+    # entry counts as a declaration too.
+    it "includes skills that appear only in the spells catalogue" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Bow" => "shortbow" },
+                           "spells"  => [{ "skill" => "Debilitation", "name" => "Malediction" }] }
+      )
+
+      expect(described_class.trainable_skills(settings)).to match_array(["Bow", "Debilitation"])
+    end
+
+    it "names a skill once when it appears in both catalogues" do
+      settings = get_settings_shape(
+        "uc_settings" => { "weapons" => { "Targeted Magic" => "scimitar" },
+                           "spells"  => [{ "skill" => "Targeted Magic", "name" => "Chill Spirit" }] }
+      )
+
+      expect(described_class.trainable_skills(settings)).to eq(["Targeted Magic"])
+    end
+
+    it "is empty when neither catalogue is present" do
+      expect(described_class.trainable_skills(get_settings_shape("uc_settings" => {}))).to eq([])
+    end
+  end
+
+  describe ".no_weapons?" do
+    it "is true for an absent weapons catalogue" do
+      expect(described_class.no_weapons?(get_settings_shape("uc_settings" => {}))).to be(true)
+    end
+
+    it "is true for an empty weapons catalogue" do
+      expect(described_class.no_weapons?(get_settings_shape("uc_settings" => { "weapons" => {} }))).to be(true)
+    end
+
+    # One weapon is enough. Leaving the other eleven out is a choice.
+    it "is false for a single entry" do
+      settings = get_settings_shape("uc_settings" => { "weapons" => { "Bow" => "shortbow" } })
+
+      expect(described_class.no_weapons?(settings)).to be(false)
+    end
+  end
+
   describe ".hunt_duration_minutes" do
     it "reads a positive whole number" do
       settings = get_settings_shape("uc_settings" => { "hunt_duration_minutes" => 5 })

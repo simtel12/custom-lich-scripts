@@ -158,13 +158,15 @@ class DirectorWorld
     # value, so there is nothing to build it with until settings are in hand)
     # and leaving the argument off silently gates a premium character out of
     # the zones they paid for.
+    refuse_without_weapons(settings)
     warn_about_max_skills(settings)
     warn_about_duration(settings)
     @picker = UberCombat::ZonePicker.new(
       @character, @zone_table,
       UberCombat::LegSettings.premium(settings),
       province: UberCombat::LegSettings.in_province_only(settings),
-      max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings)
+      max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings),
+      trainable_skills: UberCombat::LegSettings.trainable_skills(settings)
     )
     @overlay_engine = UberCombat::LegOverlay.new(
       @character,
@@ -539,6 +541,21 @@ class DirectorWorld
   end
 
   private
+
+  # An empty weapons catalogue is the one catalogue error that stays fatal.
+  # Omitting a weapon means "I do not train that one"; omitting all of them
+  # leaves nothing to hunt with, and every leg would be built for a skill with
+  # no weapon to swing. Raising here beats an itinerary of refusals.
+  def refuse_without_weapons(settings)
+    return unless UberCombat::LegSettings.no_weapons?(settings)
+
+    DRC.message('uc: uc_settings has no `weapons` entries, so there is nothing to train with.')
+    DRC.message('  Add at least one skill-to-weapon pair under uc_settings weapons.', false)
+    DRC.message('  Leaving a weapon OUT is fine and means you do not train it.', false)
+    # exit, not raise: this is a configuration mistake, and a Lich error trace
+    # would bury the three lines above it that say what to do.
+    exit
+  end
 
   # A present-but-unusable max_skills_per_leg falls back to the default, which
   # is the safe direction but is also invisible. Say so once, or a person who

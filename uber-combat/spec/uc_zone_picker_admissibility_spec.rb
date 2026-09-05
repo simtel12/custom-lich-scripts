@@ -320,4 +320,79 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
         .to contain_exactly("open", "gated", "unknown")
     end
   end
+  # THE CATALOGUE IS THE DECLARATION (user, 2026-09-05). A weapon left out of
+  # uc_settings weapons is a weapon the character does not train, and it must
+  # not reach a leg -- it used to, and then the overlay reported
+  # :no_weapon_entry and LegWriter refused the leg, so a character training
+  # three of twelve weapons could not run at all.
+  describe "the trainable-skills restriction" do
+    let(:open_zone) { UberCombat::Zone.new("anywhere", { "rank" => { "min" => 0, "max" => 1000 } }) }
+
+    def picker_for(trainable, skills)
+      character = UberCombat::Character.new(
+        FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
+      )
+      described_class.new(character, FakeZoneTable.new([open_zone]), false,
+                          trainable_skills: trainable)
+    end
+
+    it "builds legs only for the skills the catalogue names" do
+      picker = picker_for(["Bow"], { "Bow" => 100, "Small Edged" => 120 })
+
+      placed = picker.build_itinerary.legs.flat_map { |leg| leg[:skills] }
+
+      expect(placed).to eq(["Bow"])
+    end
+
+    # Not an error and not a gap. It refuses nothing; it is there so a typo in
+    # a catalogue key is distinguishable from a deliberate omission.
+    it "reports an untrained skill the character has, without refusing anything" do
+      picker = picker_for(["Bow"], { "Bow" => 100, "Small Edged" => 120 })
+
+      row = picker.build_itinerary.unplaced.find { |record| record[:skill] == "Small Edged" }
+
+      expect(row[:reason]).to eq(:not_configured)
+    end
+
+    it "says nothing about a skill the character has no rank in" do
+      picker = picker_for(["Bow"], { "Bow" => 100 })
+
+      expect(picker.build_itinerary.unplaced.map { |row| row[:skill] }).not_to include("Slings")
+    end
+
+    it "leaves Debilitation off every leg when the catalogue does not name it" do
+      picker = picker_for(["Bow"], { "Bow" => 100, "Debilitation" => 90 })
+
+      placed = picker.build_itinerary.legs.flat_map { |leg| leg[:skills] }
+
+      expect(placed).not_to include("Debilitation")
+    end
+
+    it "carries Debilitation when a spell entry declares it" do
+      picker = picker_for(["Bow", "Debilitation"], { "Bow" => 100, "Debilitation" => 90 })
+
+      placed = picker.build_itinerary.legs.flat_map { |leg| leg[:skills] }
+
+      expect(placed).to include("Debilitation")
+    end
+
+    # CT keys its stances on the EQUIPPED weapon, so a stance written for a
+    # weapon the character never holds is a stance CT never reads.
+    it "borrows a stance key from a weapon the character actually trains" do
+      picker = picker_for(["Targeted Magic", "Bow"],
+                          { "Targeted Magic" => 150, "Bow" => 100, "Small Edged" => 300 })
+
+      keys = picker.build_itinerary.legs.map { |leg| leg[:stance][:key] }
+
+      expect(keys).to all(eq("Bow"))
+    end
+
+    it "restricts nothing when no catalogue is given" do
+      picker = picker_for(nil, { "Bow" => 100, "Small Edged" => 120 })
+
+      placed = picker.build_itinerary.legs.flat_map { |leg| leg[:skills] }
+
+      expect(placed).to match_array(["Bow", "Small Edged"])
+    end
+  end
 end

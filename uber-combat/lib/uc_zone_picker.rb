@@ -69,12 +69,25 @@ module UberCombat
     # max_skills_per_leg: nil takes MAX_SKILLS_PER_LEG. Keyword, like
     # province, because a bare third or fourth positional at a call site would
     # be unreadable next to `premium`.
-    def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil)
+    # trainable_skills: the skills this character wants to train, or nil for
+    # no restriction. LegSettings.trainable_skills builds it from the weapons
+    # and spells catalogues, because the catalogue IS the declaration of what
+    # to train: a weapon left out is a weapon not trained, not an omission to
+    # be reported (user, 2026-09-05).
+    def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil,
+                   trainable_skills: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
       @province = province
       @max_skills_per_leg = max_skills_per_leg || MAX_SKILLS_PER_LEG
+      @trainable_skills = trainable_skills
+    end
+
+    # nil means no restriction, so every existing caller and every test that
+    # does not care keeps its old behaviour.
+    def trainable?(skill)
+      @trainable_skills.nil? || @trainable_skills.include?(skill)
     end
 
     # The cap actually in force, so a diagnostic can print it rather than
@@ -219,7 +232,8 @@ module UberCombat
     end
 
     def build_itinerary
-      ranks = trained_ranks(Character::KILLING_SET)
+      wanted = Character::KILLING_SET.select { |skill| trainable?(skill) }
+      ranks = trained_ranks(wanted)
       zones_by_skill = ranks.keys.to_h { |skill| [skill, admissible_zones_for(skill)] }
 
       placeable, unplaceable = ranks.keys.partition { |skill| !zones_by_skill[skill].empty? }
@@ -227,6 +241,7 @@ module UberCombat
 
       legs = build_legs(ranks.slice(*placeable), zones_by_skill)
       unplaced << debilitation_record(legs)
+      unplaced.concat(not_configured_records)
 
       presented = legs.map { |leg| present(leg) }
       Itinerary.new(legs: presented, unplaced: unplaced.compact,
@@ -261,11 +276,19 @@ module UberCombat
     # The key CT writes the stance ordering under. CT keys @stances on the
     # equipped weapon, so a magic-led leg borrows the highest weapon skill. A
     # caster is not unarmed, so this keys on a real weapon in every case.
+    # A magic-led leg borrows the character's highest weapon, because CT keys
+    # @stances on the EQUIPPED weapon and a casting leg has none of its own.
+    #
+    # The fallback prefers a weapon the character actually trains. Writing the
+    # stance for a weapon that is not in the catalogue means writing it for one
+    # they never hold, so CT would never read that entry.
     def stance_key(skills)
       weapon = skills.find { |skill| Character::WEAPON_SKILLS.include?(skill) }
       return weapon if weapon
 
-      trained_ranks(Character::WEAPON_SKILLS).max_by { |_skill, rank| rank }&.first
+      wanted = Character::WEAPON_SKILLS.select { |skill| trainable?(skill) }
+      wanted = Character::WEAPON_SKILLS if wanted.empty?
+      trained_ranks(wanted).max_by { |_skill, rank| rank }&.first
     end
 
     private
@@ -328,7 +351,24 @@ module UberCombat
                   zones_after_premium: reachable.size, zones_after_province: in_province.size } }
     end
 
+    # A skill the character HAS but does not train. Reported, and deliberately
+    # not silent: a typo in a catalogue key ("Small Edge") is indistinguishable
+    # from a deliberate omission, and one line naming it is the difference
+    # between noticing that in a minute and noticing it in a week.
+    #
+    # It is not a gap. Gaps refuse a leg; this refuses nothing.
+    def not_configured_records
+      Character::KILLING_SET.reject { |skill| trainable?(skill) }
+                            .reject { |skill| @character.rank_of(skill).zero? }
+                            .map do |skill|
+        { skill: skill, reason: :not_configured,
+          detail: { rank: @character.rank_of(skill) } }
+      end
+    end
+
     def debilitation_record(legs)
+      return nil unless trainable?("Debilitation")
+
       rank = @character.rank_of("Debilitation")
       return nil if rank.zero?
       return nil if assign_debilitation(legs, rank)

@@ -192,6 +192,33 @@ module UberCombat
       !raw.nil? && hunt_duration_minutes(settings).nil?
     end
 
+    # The skills this character actually wants to train: every skill named in
+    # the weapons catalogue, plus every skill named in the spells catalogue.
+    #
+    # THE CATALOGUE IS THE DECLARATION (user, 2026-09-05). Omitting Small Edged
+    # from `weapons` means "I do not train Small Edged", not "I forgot". It
+    # used to mean the second: the picker built a leg for every trained skill,
+    # the overlay reported :no_weapon_entry for the ones with no catalogue
+    # entry, and LegWriter refused the leg -- so a character training three of
+    # twelve weapons could not run at all.
+    #
+    # Spells count because a skill can be trained by casting rather than by
+    # swinging. Targeted Magic and Debilitation are the standing cases.
+    def self.trainable_skills(settings)
+      weapon_skills = weapons(settings).keys.map(&:to_s)
+      spell_skills = (spells(settings) || []).filter_map { |entry| entry["skill"] }
+      (weapon_skills + spell_skills).uniq
+    end
+
+    # An EMPTY weapons catalogue is an error, and the one case that must stay
+    # loud (user, 2026-09-05). Omitting a weapon is a choice; omitting all of
+    # them leaves nothing to hunt with, and combat-trainer keys its stances on
+    # an equipped weapon. Silence here would look exactly like a character with
+    # nowhere to hunt, which is the failure mode this project keeps meeting.
+    def self.no_weapons?(settings)
+      weapons(settings).empty?
+    end
+
     # Names of the OLD top-level keys a profile still carries. The caller
     # prints these as a warning.
     #

@@ -103,12 +103,33 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 
 | Key | Meaning |
 | --- | --- |
-| `weapons` | Skill to weapon-name catalogue. A leg skill with no entry is a gap, and a gap refuses the leg |
+| `weapons` | Skill to weapon-name catalogue. It is also the list of what to train. See below |
 | `spells` | Offensive-spell catalogue, matched to a leg by its own `skill` key. See below |
 | `premium` | The account tier. Defaults to non-premium, which gates conservatively |
 | `in_province_only` | Stay inside one province, for example `Zoluren`. Blank or absent means no limit |
 | `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
 | `hunt_duration_minutes` | Minutes to hunt in one stint. Absent means 30 |
+
+### The weapons catalogue is the list of what to train
+
+Leave a weapon out and the character does not train it. That is not an error
+and not a gap: the skill never reaches a leg at all, so nothing refuses to run.
+
+A skill named only in `spells` counts too, since a skill can be trained by
+casting rather than by swinging.
+
+A skill the character HAS ranks in but never named is reported once per run as
+`not_configured`. That is information, not a fault. It exists so that a typo
+in a key -- `Small Edge` for `Small Edged` -- looks different from a
+deliberate omission, instead of silently never training.
+
+An **empty** `weapons` catalogue is an error, and the scripts stop. Omitting a
+weapon is a choice; omitting all of them leaves nothing to hunt with.
+
+A magic-led leg borrows its stance key from the highest weapon the character
+actually trains, not simply the highest weapon it has ranks in. Combat-trainer
+keys stances on the equipped weapon, so a stance written for a weapon that is
+never held is one combat-trainer never reads.
 
 ### How a spell reaches a leg
 
