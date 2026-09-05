@@ -232,6 +232,17 @@ RSpec.describe UberCombat::LegOverlay do
     end
     let(:known_spell_names) { ["Fists of Faenella", "Malediction"] }
 
+    # Same catalogue, except the Debilitation entry is marked as existing to
+    # TRAIN. Used by the examples below that are about name validation and the
+    # omit rules, so the support rule ("a Debilitation spell that is not
+    # cast_only_to_train rides every leg") does not put Malediction into legs
+    # those examples expect to be empty and quietly change what they measure.
+    let(:training_only_spells) do
+      uc_spells.map do |entry|
+        entry["skill"] == "Debilitation" ? entry.merge("cast_only_to_train" => true) : entry
+      end
+    end
+
     it "omits both keys when no catalogue is given" do
       settings = overlay.build(concentrated_leg).settings
       expect(settings.key?("offensive_spells")).to be false
@@ -240,7 +251,8 @@ RSpec.describe UberCombat::LegOverlay do
 
     it "omits both keys when the catalogue has no entry for this leg's skills" do
       leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
-      settings = overlay(uc_spells: uc_spells, known_spell_names: known_spell_names).build(leg).settings
+      settings = overlay(uc_spells: training_only_spells,
+                         known_spell_names: known_spell_names).build(leg).settings
 
       expect(settings.key?("offensive_spells")).to be false
       expect(settings.key?("prioritize_offensive_spells")).to be false
@@ -274,6 +286,42 @@ RSpec.describe UberCombat::LegOverlay do
       expect(settings["prioritize_offensive_spells"]).to be true
     end
 
+    # Debilitation is a multiplier -- likelier to hit, or likelier to be
+    # missed -- so a spell kept for its EFFECT rather than for training rides
+    # every leg (user, 2026-09-05). Crossbow trains no Debilitation, and gets
+    # Malediction anyway.
+    it "carries a Debilitation spell that is not cast_only_to_train onto a leg that does not train it" do
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      settings = overlay(uc_spells: uc_spells,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings["offensive_spells"].map { |entry| entry["name"] }).to eq(["Malediction"])
+    end
+
+    # The flag is the whole distinction. A training-only spell on a leg that
+    # cannot train it would be dropped by combat-trainer anyway: on a no-gain
+    # streak it removes the skill's spells outright
+    # (combat-trainer.lic:2458-2468).
+    it "does not carry a cast_only_to_train Debilitation spell onto a leg that does not train it" do
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      settings = overlay(uc_spells: training_only_spells,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings.key?("offensive_spells")).to be false
+    end
+
+    # The support rule is DEBILITATION ONLY. A damage spell riding every leg
+    # would displace the leg's own training, because overlays always set
+    # prioritize_offensive_spells -- CT would cast instead of swinging.
+    it "does not carry a non-Debilitation spell onto a leg that does not train its skill" do
+      catalogue = [{ "skill" => "Targeted Magic", "name" => "Fists of Faenella" }]
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      settings = overlay(uc_spells: catalogue,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings.key?("offensive_spells")).to be false
+    end
+
     it "takes no constructor parameter that could switch prioritisation off" do
       expect(described_class.instance_method(:initialize).parameters.map(&:last))
         .not_to include(:prioritize_offensive_spells)
@@ -281,7 +329,7 @@ RSpec.describe UberCombat::LegOverlay do
 
     it "reports and drops an entry whose name is not in the known-name set" do
       leg = { skills: ["Bow"], zone_key: "z", stance: { policy: :spread, key: "Bow" }, min_mana: nil }
-      result = overlay(uc_spells: uc_spells, known_spell_names: known_spell_names).build(leg)
+      result = overlay(uc_spells: training_only_spells, known_spell_names: known_spell_names).build(leg)
 
       expect(result.settings["offensive_spells"]).to be_nil
       expect(result.gaps).to include(
@@ -295,7 +343,8 @@ RSpec.describe UberCombat::LegOverlay do
     # spells, and the gap record says why.
     it "omits offensive_spells entirely when no candidate survives validation" do
       leg = { skills: ["Bow"], zone_key: "z", stance: { policy: :spread, key: "Bow" }, min_mana: nil }
-      settings = overlay(uc_spells: uc_spells, known_spell_names: known_spell_names).build(leg).settings
+      settings = overlay(uc_spells: training_only_spells,
+                         known_spell_names: known_spell_names).build(leg).settings
 
       expect(settings.key?("offensive_spells")).to be false
       expect(settings.key?("prioritize_offensive_spells")).to be false
@@ -304,7 +353,7 @@ RSpec.describe UberCombat::LegOverlay do
     it "emits the survivors when only some candidates fail validation" do
       leg = { skills: ["Targeted Magic", "Bow"], zone_key: "z",
               stance: { policy: :spread, key: "Bow" }, min_mana: nil }
-      result = overlay(uc_spells: uc_spells, known_spell_names: known_spell_names).build(leg)
+      result = overlay(uc_spells: training_only_spells, known_spell_names: known_spell_names).build(leg)
 
       expect(result.settings["offensive_spells"].map { |entry| entry["name"] }).to eq(["Fists of Faenella"])
       expect(result.gaps.map { |gap| gap[:reason] }).to include(:unknown_spell_name)

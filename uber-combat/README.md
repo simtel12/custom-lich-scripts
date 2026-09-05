@@ -104,10 +104,29 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 | Key | Meaning |
 | --- | --- |
 | `weapons` | Skill to weapon-name catalogue. A leg skill with no entry is a gap, and a gap refuses the leg |
-| `spells` | Offensive-spell catalogue, matched to a leg by its own `skill` key |
+| `spells` | Offensive-spell catalogue, matched to a leg by its own `skill` key. See below |
 | `premium` | The account tier. Defaults to non-premium, which gates conservatively |
 | `in_province_only` | Stay inside one province, for example `Zoluren`. Blank or absent means no limit |
 | `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
+
+### How a spell reaches a leg
+
+A spell's own `cast_only_to_train` flag decides.
+
+`cast_only_to_train: true` means the spell exists to train its skill, so it
+goes only on legs that train that skill. Anywhere else combat-trainer stops
+casting it in any case: on a no-gain streak it removes the whole skill's
+spells (`combat-trainer.lic:2458-2468`).
+
+Without the flag, a **Debilitation** spell rides every leg. Debilitation is a
+multiplier. It makes the character likelier to hit, or likelier to be missed,
+and it does no damage by itself, so carrying it costs no attack time.
+
+This applies to Debilitation only. A damage spell on every leg would displace
+the leg's own training, because the overlay always sets
+`prioritize_offensive_spells` and combat-trainer would cast instead of swing.
+
+Debilitation never occupies a `max_skills_per_leg` slot, on any leg.
 
 `max_skills_per_leg` is there because there is no single right value. A
 character training two or three skills wants a cap that never bites. A

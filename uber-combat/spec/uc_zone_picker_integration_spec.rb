@@ -51,18 +51,35 @@ RSpec.describe UberCombat::ZonePicker, "against the committed zone table" do
     end
   end
 
-  it "places each trained skill on at most one leg" do
+  # KILLING skills only. Debilitation is deliberately exempt: it rides every
+  # leg whose band admits it (user, 2026-09-05), because it is a multiplier
+  # whose value is spread across the itinerary rather than banked on one leg.
+  # The invariant still matters for everything that kills -- a weapon on two
+  # legs would be trained twice per cycle at another weapon's expense.
+  it "places each trained killing skill on at most one leg" do
     placed = itinerary.legs.flat_map { |leg| leg[:skills] }
+                      .select { |skill| UberCombat::Character::KILLING_SET.include?(skill) }
 
     expect(placed.uniq).to eq(placed)
   end
 
   it "accounts for every trained offense skill exactly once" do
     placed = itinerary.legs.flat_map { |leg| leg[:skills] }
+                      .select { |skill| UberCombat::Character::KILLING_SET.include?(skill) }
     reported = itinerary.unplaced.map { |row| row[:skill] }
-    trained = UberCombat::Character::TRAINING_SET.select { |skill| drazoken_ranks.key?(skill) }
+    trained = UberCombat::Character::KILLING_SET.select { |skill| drazoken_ranks.key?(skill) }
 
-    expect((placed + reported).sort).to eq(trained.sort)
+    expect((placed + reported - ["Debilitation"]).sort).to eq(trained.sort)
+  end
+
+  # Debilitation is reported as unplaced ONLY when no leg can train it. If any
+  # leg admits its rank, every such leg carries it and nothing is reported.
+  it "carries Debilitation on every leg that admits it, or reports it once" do
+    carriers = itinerary.legs.count { |leg| leg[:skills].include?("Debilitation") }
+    reported = itinerary.unplaced.count { |row| row[:skill] == "Debilitation" }
+
+    expect(carriers.positive? ^ reported.positive?).to be(true)
+    expect(reported).to be <= 1
   end
 
   # Widened deliberately, not to make anything pass. :escort_access and
@@ -90,6 +107,22 @@ RSpec.describe UberCombat::ZonePicker, "against the committed zone table" do
                             .select { |key| table.zone(key).premium_unknown? }
 
     expect(itinerary.unresolved_premium.map { |row| row[:zone_key] }).to match_array(unknown_keys)
+  end
+
+  # REGRESSION. assign_debilitation used to ask whether ANY of the leg's zone
+  # CANDIDATES admitted Debilitation's rank, while present then chose the
+  # narrowest candidate -- usually a different zone. That put Debilitation at
+  # rank 138 on a leg whose chosen zone was young_ogres, banded 80-120, which
+  # cannot teach it. One carrier hid the bug; making it ride every admitting
+  # leg exposed it. Both now ask chosen_zone.
+  it "lists Debilitation only on legs whose CHOSEN zone can teach it" do
+    itinerary.legs.each do |leg|
+      next unless leg[:skills].include?("Debilitation")
+
+      zone = table.zone(leg[:zone_key])
+      expect(zone.rank_min).to be <= drazoken_ranks["Debilitation"]
+      expect(zone.rank_max).to be >= drazoken_ranks["Debilitation"]
+    end
   end
 
   it "never puts Debilitation at the head of a leg" do

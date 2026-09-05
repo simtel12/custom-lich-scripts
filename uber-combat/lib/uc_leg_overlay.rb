@@ -160,10 +160,46 @@ module UberCombat
     # catalogue covers. Both cases end the same way: offensive_spells is
     # omitted and the character's own setup value stands (user ruling,
     # Wave 8).
+    # Two ways a spell reaches a leg (user, 2026-09-05), and the catalogue's
+    # own cast_only_to_train flag decides which applies:
+    #
+    #   cast_only_to_train TRUE  -- the spell exists to train its skill, so it
+    #     goes only where the leg trains that skill. Anywhere else CT would
+    #     stop casting it anyway: on a no-gain streak it counts the spell and
+    #     past magic_gain_check does
+    #     `@offensive_spells.reject! { |s| s['skill'] == ... }`
+    #     (combat-trainer.lic:2458-2468), removing the whole skill.
+    #
+    #   cast_only_to_train FALSE or absent -- the spell exists for its EFFECT,
+    #     so it rides every leg.
+    #
+    # THE SECOND RULE IS DEBILITATION ONLY, and the reason is the user's own:
+    # Debilitation does no damage by itself. It multiplies -- likelier to hit,
+    # or likelier to be missed -- so carrying it onto a leg displaces nothing.
+    # A damage spell carried everywhere would displace plenty: overlays set
+    # prioritize_offensive_spells, so a Targeted Magic spell on a Brawling leg
+    # means CT casts instead of swinging, and the leg trains the wrong skill.
+    #
+    # Debilitation never occupies a MAX_SKILLS_PER_LEG slot either, because
+    # legs are clustered from KILLING_SET and it is not in that set
+    # (uc_character.rb:77-81).
+    SUPPORT_SKILL = "Debilitation"
+
     def spell_candidates(leg)
       return [] unless @uc_spells
 
-      @uc_spells.select { |entry| leg[:skills].include?(entry["skill"]) }
+      @uc_spells.select { |entry| trains_here?(leg, entry) || support_everywhere?(entry) }
+    end
+
+    def trains_here?(leg, entry)
+      leg[:skills].include?(entry["skill"])
+    end
+
+    # != true rather than falsey, so a hand-edited "cast_only_to_train: yes"
+    # -- a String in YAML, not the boolean -- is not read as a request to
+    # carry a training-only spell onto every leg in the itinerary.
+    def support_everywhere?(entry)
+      entry["skill"] == SUPPORT_SKILL && entry["cast_only_to_train"] != true
     end
 
     # One entry per leg skill that has a uc_weapons entry. Keys are not

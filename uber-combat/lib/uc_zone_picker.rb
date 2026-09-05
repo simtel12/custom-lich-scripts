@@ -194,12 +194,28 @@ module UberCombat
     # lead a leg. It rides a killing skill whose zone band admits it. When no leg
     # admits it, it goes untrained this itinerary. It is not given a leg of its
     # own, and it is not forced into a zone whose band it does not fit.
+    # EVERY leg whose band admits it, not the first (user, 2026-09-05).
+    # Debilitation is a multiplier: it makes the character likelier to hit or
+    # likelier to be missed, so its value is spread across the whole itinerary
+    # rather than banked on one leg. It was `legs.find` because one carrier is
+    # all that TRAINING it needs, which confused two different jobs.
+    #
+    # Membership of leg[:skills] still means exactly one thing: this leg TRAINS
+    # the skill. That is what stop_on, LegTracker and the gap report all read
+    # it as, so a leg whose band cannot teach Debilitation must not list it --
+    # doing so would put a skill that can never cap into an .all? stop
+    # condition and into the tracker's mindlock test.
+    #
+    # Carrying Debilitation for SURVIVABILITY on a leg that cannot train it is
+    # a question about spells, not about skills, and LegOverlay#spell_candidates
+    # answers it.
     def assign_debilitation(legs, deb_rank)
-      carrier = legs.find do |leg|
-        leg[:zone_candidates].any? { |zone| zone.rank_min <= deb_rank && deb_rank <= zone.rank_max }
+      carriers = legs.select do |leg|
+        zone = chosen_zone(leg)
+        zone && zone.rank_min <= deb_rank && deb_rank <= zone.rank_max
       end
-      carrier[:skills] << "Debilitation" if carrier
-      carrier
+      carriers.each { |leg| leg[:skills] << "Debilitation" }
+      carriers.first
     end
 
     def build_itinerary
@@ -326,8 +342,24 @@ module UberCombat
     #
     # Narrowest band wins a tie. It wastes the least of the leg's rank room,
     # which is consistent with the rule that there is no margin.
+    # The zone the leg will ACTUALLY hunt. Narrowest band wins a tie, because
+    # it wastes the least of the leg's rank room, which is consistent with
+    # there being no margin.
+    #
+    # Extracted so assign_debilitation and present cannot disagree. They used
+    # to: assign_debilitation asked whether ANY candidate admitted
+    # Debilitation's rank, while present then picked the narrowest candidate,
+    # which is often a different zone. On the Drazoken fixture that put
+    # Debilitation at rank 138 on a leg whose chosen zone was young_ogres,
+    # banded 80-120 -- a zone that cannot teach it. The bug was invisible while
+    # only one leg ever carried Debilitation and the first admitting leg
+    # happened to be right; making it ride every admitting leg exposed it.
+    def chosen_zone(leg)
+      leg[:zone_candidates].min_by { |candidate| candidate.rank_max - candidate.rank_min }
+    end
+
     def present(leg)
-      zone = leg[:zone_candidates].min_by { |candidate| candidate.rank_max - candidate.rank_min }
+      zone = chosen_zone(leg)
       { skills: leg[:skills],
         zone_key: zone.key,
         stance: { policy: stance_for(zone), key: stance_key(leg[:skills]) },
