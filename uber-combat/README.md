@@ -111,34 +111,48 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 
 ### How a spell reaches a leg
 
-A spell's own `cast_only_to_train` flag decides.
+Two flags on the spell entry decide, and neither is required.
 
-`cast_only_to_train: true` means the spell exists to train its skill, so it
-goes only on legs that train that skill. Anywhere else combat-trainer stops
-casting it in any case: on a no-gain streak it removes the whole skill's
-spells (`combat-trainer.lic:2458-2468`).
+| Flags | Which legs | Does combat-trainer keep casting it |
+| --- | --- | --- |
+| neither, and the skill is Debilitation | every leg | yes |
+| neither, any other skill | legs that train the skill | yes |
+| `cast_only_to_train: true` | legs that train the skill | **no** |
+| `use_for_survivability: true` | legs that train the skill | yes |
 
-Without the flag, a **Debilitation** spell rides every leg. Debilitation is a
-multiplier. It makes the character likelier to hit, or likelier to be missed,
-and it does no damage by itself, so carrying it costs no attack time.
+**`cast_only_to_train: true`** means the spell exists to train its skill. On a
+no-gain streak combat-trainer removes the whole skill's spells
+(`combat-trainer.lic:2458-2468`), which is correct for training and wrong for
+anything else.
 
-That default applies to Debilitation only. A damage spell on every leg would
-displace the leg's own training, because the overlay always sets
+**`use_for_survivability: true`** places the spell exactly where
+`cast_only_to_train` would, and differs only in that combat-trainer keeps
+casting it. Use it for a spell whose value is its effect.
+
+The real criterion for that placement is "creatures that can challenge our
+defences", meaning Parry Ability, Shield Usage and Evasion sit below the
+creature's upper rank. There is no such check. Training-leg placement is used
+as a proxy, because a leg trains a skill only where the zone band admits that
+skill's rank, and a rank-appropriate zone is broadly one whose creatures test
+the character's defences. The proxy is imperfect and was chosen knowing that.
+
+A **Debilitation** spell with no flags rides every leg, because Debilitation
+is a multiplier: it makes the character likelier to hit, or likelier to be
+missed, and does no damage by itself, so carrying it costs no attack time.
+`use_for_survivability` NARROWS that back to the legs that train it.
+
+No other skill ever rides every leg. A damage spell everywhere would displace
+the leg's own training, because the overlay always sets
 `prioritize_offensive_spells` and combat-trainer would cast instead of swing.
-
-`use_for_survivability: true` asks for a spell of ANY skill to ride every leg.
-Combat-trainer does not read this key, so it changes placement here and
-nothing there. Use it for a damage spell only if displacing the leg's own
-weapon training is what you want.
 
 Debilitation never occupies a `max_skills_per_leg` slot, on any leg.
 
 ### The one combination to avoid
 
 `use_for_survivability: true` with `cast_only_to_train: true` contradicts
-itself. The first asks for the spell everywhere; the second asks
-combat-trainer to stop casting it once it stops teaching. Combat-trainer wins,
-because it owns the casting.
+itself. The placements agree, but the second asks combat-trainer to stop
+casting once the spell stops teaching, which is the one thing the first exists
+to prevent. Combat-trainer wins, because it owns the casting.
 
 Worse, its blacklist works by SKILL, not by spell
 (`combat-trainer.lic:2468`), so one sibling spell of the same skill carrying
@@ -147,7 +161,8 @@ carry it.
 
 The overlay reports both shapes as a `survivability_blacklisted` gap rather
 than dropping either flag, because dropping one would be a guess at which was
-meant.
+meant. A leg with any gap is refused, so nothing runs on a profile whose flags
+disagree.
 
 `max_skills_per_leg` is there because there is no single right value. A
 character training two or three skills wants a cap that never bites. A

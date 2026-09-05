@@ -322,26 +322,54 @@ RSpec.describe UberCombat::LegOverlay do
       expect(settings.key?("offensive_spells")).to be false
     end
 
-    # use_for_survivability is a flag combat-trainer does not read, so it
-    # changes placement here and nothing there. It carries a spell of ANY skill
-    # onto every leg, not just Debilitation, because it is an explicit request
-    # rather than an inference about what the skill does.
-    it "carries a spell flagged use_for_survivability onto a leg that does not train it" do
-      catalogue = [{ "skill" => "Targeted Magic", "name" => "Fists of Faenella",
+    # use_for_survivability places EXACTLY where cast_only_to_train places, and
+    # differs only in that combat-trainer keeps casting there. The real
+    # criterion is "creatures that can challenge our defences"; training-leg
+    # placement is the proxy the code already computes for it.
+    #
+    # So on a Debilitation spell the flag NARROWS: without it the spell rides
+    # every leg, with it only the legs that train Debilitation.
+    it "keeps a survivability spell off a leg that does not train its skill" do
+      catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
                      "use_for_survivability" => true }]
       leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
       settings = overlay(uc_spells: catalogue,
                          known_spell_names: known_spell_names).build(leg).settings
 
-      expect(settings["offensive_spells"].map { |entry| entry["name"] }).to eq(["Fists of Faenella"])
+      expect(settings.key?("offensive_spells")).to be false
     end
 
-    # The flag reaches the profile untouched. CT reads a fixed key set and
-    # this is not in it, so it is inert there and self-documenting here.
+    it "puts a survivability spell on a leg that does train its skill" do
+      catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
+                     "use_for_survivability" => true }]
+      leg = { skills: ["Bow", "Debilitation"], zone_key: "z",
+              stance: { policy: :spread, key: "Bow" }, min_mana: nil }
+      settings = overlay(uc_spells: catalogue,
+                         known_spell_names: known_spell_names).build(leg).settings
+
+      expect(settings["offensive_spells"].map { |entry| entry["name"] }).to eq(["Malediction"])
+    end
+
+    # The pair that shows the flag is doing the narrowing, not the skill name.
+    it "narrows a Debilitation spell that would otherwise ride every leg" do
+      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      without = [{ "skill" => "Debilitation", "name" => "Malediction" }]
+      with = [without.first.merge("use_for_survivability" => true)]
+
+      wide = overlay(uc_spells: without, known_spell_names: known_spell_names).build(leg).settings
+      narrow = overlay(uc_spells: with, known_spell_names: known_spell_names).build(leg).settings
+
+      expect(wide["offensive_spells"].map { |entry| entry["name"] }).to eq(["Malediction"])
+      expect(narrow.key?("offensive_spells")).to be false
+    end
+
+    # The flag reaches the profile untouched. CT reads a fixed key set and this
+    # is not in it, so it is inert there and self-documenting here.
     it "writes the flag through to the profile rather than stripping it" do
       catalogue = [{ "skill" => "Debilitation", "name" => "Malediction",
                      "use_for_survivability" => true }]
-      leg = { skills: ["Crossbow"], zone_key: "z", stance: { policy: :spread, key: "Crossbow" }, min_mana: nil }
+      leg = { skills: ["Bow", "Debilitation"], zone_key: "z",
+              stance: { policy: :spread, key: "Bow" }, min_mana: nil }
       settings = overlay(uc_spells: catalogue,
                          known_spell_names: known_spell_names).build(leg).settings
 

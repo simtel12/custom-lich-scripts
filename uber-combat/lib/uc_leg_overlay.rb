@@ -198,8 +198,25 @@ module UberCombat
     # != true rather than falsey, so a hand-edited "cast_only_to_train: yes"
     # -- a String in YAML, not the boolean -- is not read as a request to
     # carry a training-only spell onto every leg in the itinerary.
+    # use_for_survivability places EXACTLY where cast_only_to_train places
+    # (user, 2026-09-05), and the difference is only that combat-trainer keeps
+    # casting. "Like cast_only_to_train, but do not stop casting."
+    #
+    # WHY THAT IS THE RIGHT PLACEMENT, and it is not the every-leg rule I first
+    # built. The real criterion is "creatures that can challenge our defences",
+    # meaning Parry, Shield Usage and Evasion sit below the creature's upper
+    # rank. Rather than build that check, the user chose the placement the code
+    # ALREADY computes as a proxy for it: a leg trains a skill only where the
+    # zone band admits that skill's rank, and a zone that is rank-appropriate
+    # is broadly the one whose creatures test the character's defences. The
+    # proxy is imperfect and was chosen knowing that.
+    #
+    # So the flag NARROWS a Debilitation spell from every leg back to the legs
+    # that train it. For any other skill it changes placement not at all, since
+    # nothing but Debilitation ever rode every leg -- there it is documentation
+    # of intent, and a reminder not to reach for cast_only_to_train.
     def support_everywhere?(entry)
-      return true if entry["use_for_survivability"] == true
+      return false if entry["use_for_survivability"] == true
 
       entry["skill"] == SUPPORT_SKILL && entry["cast_only_to_train"] != true
     end
