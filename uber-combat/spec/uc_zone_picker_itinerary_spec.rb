@@ -30,11 +30,15 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
   end
 
   describe "#build_legs, width-bounded clustering" do
-    # Every skill can hunt anywhere, so this isolates the width rule itself.
-    def leg_skills(width)
+    # Every skill can hunt anywhere, so this isolates the width rule itself --
+    # and max_skills is nil for the same reason. MAX_SKILLS_PER_LEG would split
+    # these clusters before the width rule finished expressing itself, so every
+    # example below would really be measuring the cap. The cap has its own
+    # block, over this same fixture, further down.
+    def leg_skills(width, max_skills = nil)
       zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
       picker_with([open_zone])
-        .build_legs(weapon_vector, zones_by_skill, width)
+        .build_legs(weapon_vector, zones_by_skill, width, max_skills)
         .map { |leg| leg[:skills] }
     end
 
@@ -68,6 +72,33 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
       (28..55).each do |width|
         expect(leg_skills(width).size).to eq(3)
       end
+    end
+
+    # The production cap, over the same 12-weapon fixture. Without it the third
+    # leg carries SIX skills, so a 30-minute stint gives each about five
+    # minutes -- the starvation the limit exists to stop (user, 2026-09-05).
+    it "splits an oversized cluster at MAX_SKILLS_PER_LEG" do
+      capped = leg_skills(40, described_class::MAX_SKILLS_PER_LEG)
+
+      expect(capped.map(&:size)).to all(be <= described_class::MAX_SKILLS_PER_LEG)
+    end
+
+    # Splitting must never DROP a skill. Clustering is an optimisation, and the
+    # oversized cluster's tail becomes the next leg rather than going untrained.
+    it "keeps every skill when it splits a cluster" do
+      capped = leg_skills(40, described_class::MAX_SKILLS_PER_LEG)
+
+      expect(capped.flatten.sort).to eq(leg_skills(40).flatten.sort)
+    end
+
+    # The split follows rank order, so the tail of an oversized cluster becomes
+    # the next leg's leader rather than being scattered.
+    it "splits the six-skill leg into two, in rank order" do
+      uncapped = leg_skills(40)
+      capped = leg_skills(40, described_class::MAX_SKILLS_PER_LEG)
+
+      expect(uncapped.last.size).to eq(6)
+      expect(capped.last(2)).to eq([uncapped.last.first(3), uncapped.last.last(3)])
     end
 
     it "keeps the default width inside the stable band" do
@@ -121,9 +152,13 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
       expect(leg_count_at_default_width).to eq(3)
     end
 
+    # max_skills nil for the same reason the width block lifts it: the contrast
+    # being drawn is gap-chaining against WIDTH-bounded clustering. Leaving the
+    # cap on would add its own splits to the count and blur which rule produced
+    # them.
     def leg_count_at_default_width
       zones_by_skill = weapon_vector.keys.to_h { |skill| [skill, [open_zone]] }
-      picker_with([open_zone]).build_legs(weapon_vector, zones_by_skill, 40).size
+      picker_with([open_zone]).build_legs(weapon_vector, zones_by_skill, 40, nil).size
     end
   end
 

@@ -14,6 +14,28 @@ module UberCombat
     # 30 and at 40. Not load-bearing, and not a safety margin.
     LEG_WIDTH_RANKS = 40
 
+    # The most KILLING skills one leg may carry. Debilitation does not count
+    # against it (see assign_debilitation): it is a passenger, it never enters
+    # combat-trainer's weapon rotation, and it trains through offensive_spells
+    # rather than by being swung.
+    #
+    # WHY A LIMIT AT ALL (user, 2026-09-05). More skills on a leg means less
+    # experience per skill in a run of that leg -- combat-trainer divides one
+    # stint's fighting between everything in weapons_to_train. That is
+    # arithmetic rather than a fault, and the right answer is to carry fewer
+    # skills per leg, not to spend more stints on the leg. Zurvan's leg 2 had
+    # collected FIVE skills, so a 30-minute stint gave each about six minutes.
+    #
+    # 3 divides a stint about ten minutes to a skill and splits that leg into
+    # two. The trade is against fixed overhead: every leg is its own stint and
+    # every stint pays a tannery trip, a blocking restock, travel and the walk
+    # home -- measured at roughly eight minutes. Fewer skills per leg means
+    # more legs, more stints, and more of that overhead per cycle.
+    #
+    # UNMEASURED. Raising it makes cycles cheaper and each skill's share
+    # thinner; lowering it does the reverse.
+    MAX_SKILLS_PER_LEG = 3
+
     # premium: the character's account tier, as LegSettings.premium reports it
     # (uc_leg_settings.rb). It arrives as a constructor input, alongside the
     # character and the table, because it is a static fact about the account
@@ -119,7 +141,7 @@ module UberCombat
     # The pass is greedy and left to right. A skill that joins no cluster becomes
     # its own single-skill leg, which is correct but less travel-efficient.
     # Clustering is an optimisation. It must never starve a skill of its zone.
-    def build_legs(ranks, zones_by_skill, width = LEG_WIDTH_RANKS)
+    def build_legs(ranks, zones_by_skill, width = LEG_WIDTH_RANKS, max_skills = MAX_SKILLS_PER_LEG)
       legs = []
       remaining = ranks.keys.sort_by { |skill| -ranks[skill] }
       until remaining.empty?
@@ -127,6 +149,12 @@ module UberCombat
         skills = [leader]
         candidates = zones_by_skill[leader]
         remaining.reject! do |skill|
+          # A full leg stops absorbing and the rest stay in `remaining`, so the
+          # next leg's leader is simply the next-highest skill. That splits an
+          # oversized cluster along rank order instead of dropping anything --
+          # clustering is an optimisation and must never starve a skill of its
+          # zone (see this method's header).
+          next false if max_skills && skills.size >= max_skills
           next false if (ranks[leader] - ranks[skill]).abs > width
 
           shared = candidates & zones_by_skill[skill]

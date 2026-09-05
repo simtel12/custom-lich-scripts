@@ -502,7 +502,7 @@ RSpec.describe UberCombat::Director do
       # "rebuilds the itinerary once every leg has had its turn" covers that.
       it "builds the itinerary exactly once when neither a cycle nor a reselect completes" do
         world = world_for(bow)
-        session_for(world).run(1)
+        session_for(world, stint_cap: nil).run(1)
 
         expect(world.itinerary_calls).to eq(1)
       end
@@ -631,17 +631,25 @@ RSpec.describe UberCombat::Director do
         expect(world.overlay_calls.map { |call| call.first[:skills] }).to all(eq(["Bow"]))
       end
 
+      # Four, not two: at MAX_STINTS_PER_LEG = 1 every productive stint hands
+      # over, so four stints over two legs is four leg changes. The property
+      # under test is unchanged -- a leg change always builds a fresh tracker,
+      # never reuses the previous leg's.
       it "replaces the tracker when the leg changes" do
         world = world_for(bow, brawling)
         session_for(world).run(4)
 
-        expect(world.trackers.size).to eq(2)
+        expect(world.trackers.size).to eq(4)
       end
 
+      # stint_cap lifted deliberately. The cap outranks :reselect (see .decide),
+      # and at the shipped value of 1 it fires on every stint, so a reselect
+      # can never be the decision in production. The precedence is the point of
+      # the rule; this example is about what :reselect DOES once it is reached.
       it "rebuilds the itinerary on a :reselect verdict" do
         world = world_for(bow)
         world.script_stint(ranks: { "Evasion" => 10 }).script_stint
-        session_for(world).run(2)
+        session_for(world, stint_cap: nil).run(2)
 
         expect(world.itinerary_calls).to eq(2)
         expect(world.event(:verdict).first[:decision].action).to eq(:reselect)
@@ -651,7 +659,7 @@ RSpec.describe UberCombat::Director do
         world = world_for(bow, brawling)
         world.queue_itinerary(itinerary(brawling, bow))
         world.script_stint(ranks: { "Evasion" => 10 })
-        session_for(world).run(2)
+        session_for(world, stint_cap: nil).run(2)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] }).to eq([["Bow"], ["Bow"]])
       end
@@ -660,7 +668,7 @@ RSpec.describe UberCombat::Director do
         world = world_for(bow, brawling)
         world.queue_itinerary(itinerary(brawling))
         world.script_stint(ranks: { "Evasion" => 10 })
-        session_for(world).run(2)
+        session_for(world, stint_cap: nil).run(2)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] }).to eq([["Bow"], ["Brawling"]])
       end
@@ -677,7 +685,7 @@ RSpec.describe UberCombat::Director do
              .script_stint(stop_reason: nil, elapsed: 5.0)
              .script_stint(stop_reason: nil, elapsed: 5.0)
              .script_stint
-        outcome = session_for(world).run(2)
+        outcome = session_for(world, stint_cap: nil).run(2)
 
         expect(outcome.stopped).to eq(:budget_spent)
         expect(world.overlay_calls.last.first[:skills]).to eq(["Bow"])
@@ -695,10 +703,26 @@ RSpec.describe UberCombat::Director do
       # gains a rank every stint resets the barren count forever and holds the
       # character until `outgrown` fires, which for Zurvan's leg 1 was six
       # ranks away while legs 2 and 3 never ran at all.
-      it "hands over after MAX_STINTS_PER_LEG productive stints even while gaining" do
+      # The shipped value is 1, so a gaining leg hands over every stint and the
+      # itinerary is a plain round robin. This is the starvation fix: without
+      # it, a leg gaining a rank per stint resets the barren count forever and
+      # legs 2..N never run.
+      it "hands over every productive stint at the shipped cap, even while gaining" do
         world = world_for(bow, brawling)
         4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
         session_for(world).run(4)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] })
+          .to eq([["Bow"], ["Brawling"], ["Bow"], ["Brawling"]])
+      end
+
+      # The cap is not hard-wired to 1: raising it holds a gaining leg for
+      # exactly that many stints, which is what makes the constant meaningful
+      # rather than a disguised boolean.
+      it "holds a gaining leg for the cap when the cap is raised" do
+        world = world_for(bow, brawling)
+        4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
+        session_for(world, stint_cap: 2).run(4)
 
         expect(world.overlay_calls.map { |call| call.first[:skills] })
           .to eq([["Bow"], ["Bow"], ["Brawling"], ["Brawling"]])
@@ -709,7 +733,7 @@ RSpec.describe UberCombat::Director do
         2.times { world.script_stint(ranks: { "Bow" => 1 }) }
         session_for(world).run(2)
 
-        expect(world.event(:verdict).last[:decision].reason).to eq(:stint_cap)
+        expect(world.event(:verdict).first[:decision].reason).to eq(:stint_cap)
       end
 
       # A COMPLETED CYCLE rebuilds, not every advance (user, 2026-09-05). The
@@ -718,17 +742,19 @@ RSpec.describe UberCombat::Director do
       # itinerary computed from ranks the character had hours ago.
       it "rebuilds the itinerary once every leg has had its turn" do
         world = world_for(bow, brawling)
-        4.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
-        session_for(world).run(4)
+        2.times { world.script_stint(ranks: { "Bow" => 1, "Brawling" => 1 }) }
+        session_for(world).run(2)
 
         # One build at the start, one more after Brawling completes the cycle.
         expect(world.itinerary_calls).to eq(2)
       end
 
+      # Leg one advancing is NOT a completed cycle. Only the wrap back to
+      # index 0 is, which is why the trigger is the wrap and not the advance.
       it "does not rebuild before the cycle completes" do
         world = world_for(bow, brawling)
-        2.times { world.script_stint(ranks: { "Bow" => 1 }) }
-        session_for(world).run(2)
+        world.script_stint(ranks: { "Bow" => 1 })
+        session_for(world).run(1)
 
         expect(world.itinerary_calls).to eq(1)
       end

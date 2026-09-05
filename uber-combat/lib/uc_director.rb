@@ -125,28 +125,38 @@ module UberCombat
     MAX_LEG_FAILURES = 2
 
     # PRODUCTIVE stints one leg may run before the director moves on, whether
-    # or not anything says it is finished.
+    # or not anything says the leg is finished.
     #
-    # BARREN_LIMIT cannot do this job, because it only counts stints that
-    # gained NOTHING. A leg that gains a rank every stint resets it every
-    # time, so a leg still inside its band holds the character until it is
-    # outgrown -- and `outgrown` needs the leading skill to pass the zone's
-    # rank_max. Live case (user, 2026-09-05): Zurvan's leg 1 is Targeted
-    # Magic at rank 84 in a 50-90 zone, so six ranks of gaining stints stand
-    # between it and its only exit, while legs 2 and 3 hold skills at ranks 11
-    # to 30 that never get a turn. Backtraining starves exactly this way.
+    # ONE (user, 2026-09-05). Every productive stint hands over, so the
+    # itinerary is a plain round robin and no leg can starve another.
     #
-    # Mindlock remains the good early exit. This is the upper bound for when
-    # mindlock does not fire -- and in D1 it usually does not, because the
-    # director samples mindstate after hunting-buddy has walked home and let
-    # it drain into ranks (spec correction C2).
+    # The two ways a leg slows down are both NORMAL, and neither is a reason
+    # to hold the character there:
     #
-    # 2 at DURATION_MINUTES = 30 is one hour per leg, so a three-leg itinerary
-    # cycles in about three hours plus travel. The first measured stint took a
-    # skill from mindstate 0 to 25 of the 34 that means locked, so a second
-    # stint is roughly where a leg stops paying and a third would mostly
-    # waste. UNMEASURED beyond that single sample.
-    MAX_STINTS_PER_LEG = 2
+    #   A skill trains more slowly as it approaches the upper bound of the
+    #   creature it trains on. The character eventually ages out of that
+    #   creature, moves on, and speeds up again. Waiting for that inside one
+    #   leg starves every other leg meanwhile.
+    #
+    #   More skills on a leg means less experience per skill in a run of it.
+    #   That is arithmetic, not a fault, and the answer is a limit on how many
+    #   skills a leg may carry, not more stints on the leg.
+    #
+    # BARREN_LIMIT cannot do this job. It counts only stints that gained
+    # NOTHING, so a leg gaining a rank every stint resets it every time and
+    # holds the character until `outgrown` fires. Zurvan's leg 1 was Targeted
+    # Magic at rank 84 in a 50-90 zone: six ranks of productive stints before
+    # its only exit, while legs 2 and 3 held skills at ranks 11 to 30 that
+    # would never have run at all.
+    #
+    # CONSEQUENCE, stated plainly: at 1 this fires on every productive stint,
+    # so it reaches its limit before BARREN_LIMIT, before `outgrown` and
+    # before `mindlocked` can decide anything. LegTracker no longer influences
+    # ADVANCEMENT in D1 at all; its remaining job is :reselect, which still
+    # rebuilds the itinerary when a defence rank rises. The other rules are
+    # kept because they are correct and tested, and they become live again the
+    # moment this number is raised.
+    MAX_STINTS_PER_LEG = 1
 
     # The stop reasons that mean the CHARACTER is in trouble, as opposed to
     # the run merely being over or the configuration being wrong. Only these
