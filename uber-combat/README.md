@@ -21,7 +21,7 @@ calls and the printing, and they own no decision.
 | File | Contents |
 | --- | --- |
 | `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the defence ordering, mindstate reads |
-| `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, zone readers, critter lookup through `critter_refs` |
+| `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, zone and critter readers, critter lookup through `critter_refs`, the enrichment-flag rollups |
 | `lib/uc_zone_picker.rb` | Admissibility, clustering, stance derivation, the itinerary builder |
 | `lib/uc_leg_tracker.rb` | Leg advancement: the hard exit, mindlock, no-gain, reselect |
 | `lib/uc_leg_overlay.rb` | Maps a leg plus live character state to a complete profile overlay hash, and reports its gaps |
@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-341 examples, about 2 seconds, no game needed.
+496 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -82,7 +82,7 @@ cd custom-scripts
 BUNDLE_GEMFILE=uber-combat/Gemfile bundle exec rubocop uber-combat
 ```
 
-29 files, no offenses. The custom cop rejects non-ASCII source. Write no
+31 files, no offenses. The custom cop rejects non-ASCII source. Write no
 arrows, no em dashes and no smart quotes in `.rb` files.
 
 The suite runs in one process and needs no game runtime. `spec/support/` holds
@@ -274,6 +274,41 @@ Do not edit the runtime copy. Commit only the source copy.
 Keep the `base-` prefix. Lich globs `base*.yaml` and builds the name with
 `to_base_filename` (`setup_files.rb:201-203`), so `get_data('uc-zones')` finds
 the file only with that prefix.
+
+### The per-creature enrichment flags
+
+Every one of the 306 critter records carries `skinnable`, `drops_boxes`,
+`construct`, `undead`, `cursed` and `corporeal`, harvested from elanthipedia's
+`{{Critter}}` infobox, plus `skin_yields`: which of a skin, a part and a bone
+the creature actually drops. See `notes/uber-combat/43-critter-enrichment.md`.
+
+**Every flag is three-state, and null is not false.** `Template:Critter`
+renders an absent field as "Unknown", so null means nobody has checked. 20
+records have all seven null, because their page is missing or is a
+disambiguation stub. Treat null as an exclusion wherever a false would have
+admitted something.
+
+**`skinnable` is not "yields a skin".** `|Skinnable=` only says the SKIN verb
+does something here. The adult desert armadillo is skinnable and yields a
+plated claw and no hide. A leg gathering skins reads `skin_yields`.
+
+**`undead` and `cursed` are one field.** Elanthipedia's `|Evil=` is a four-way
+alignment (`cursed` / `undead` / `holy` / `no`), so the two are never both true
+and an absent `|Evil=` leaves both null rather than false. That is why
+`Critter#construct_or_undead` -- the empath gate, since an empath may attack
+only a construct or an undead -- answers nil rather than false when the
+alignment is unknown. Attacking a living creature is a guild-law violation, not
+lost yield, so `ZoneTable#all_construct_or_undead?` fails an unknown and fails
+an empty roster.
+
+The zone rollups (`qualifying_ratio`, `flag_census`, `all_construct_or_undead?`,
+`any_loot?`) are computed at load time and never stored, per the data file's own
+rule. They put 293 zones in `normal`, 190 in `skin`, 140 in `lockpick`, 31 in
+`cleric` and 75 in `empath`. `necro` still needs `ritual_eligible`, which the
+wiki does not carry.
+
+Nothing consumes these yet. The picker, the overlay and the director are
+unchanged; `43-critter-enrichment.md` proposes what should consume them.
 
 ## The runtime library path
 

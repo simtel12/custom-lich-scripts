@@ -130,6 +130,182 @@ module UberCombat
     end
   end
 
+  # One creature record from the `critters:` dictionary. A thin reader, for the
+  # same reason Zone is one: the enrichment flags are THREE-STATE and a caller
+  # that indexes the raw hash reads a missing key as nil without ever deciding
+  # what nil means.
+  #
+  # Every predicate below therefore answers true / false / nil, and none of them
+  # collapses nil to false. nil is "elanthipedia does not say", which
+  # Template:Critter renders as "Unknown" on the page itself. 20 of the 306
+  # records have all seven flags nil, because their page is missing or carries
+  # no {{Critter}} infobox at all.
+  #
+  # Indexed with Strings throughout, for the reason Zone#premium documents:
+  # these keys are NESTED, get_data's OpenStruct symbolises the top level only,
+  # so a Symbol here reads nil for all 306 records in production -- the
+  # fail-open direction, which raises nothing and is never noticed.
+  class Critter
+    attr_reader :key, :data
+
+    def initialize(key, data)
+      @key = key
+      @data = data || {}
+    end
+
+    def noun
+      data["noun"]
+    end
+
+    def skinnable
+      data["skinnable"]
+    end
+
+    def drops_boxes
+      data["drops_boxes"]
+    end
+
+    def construct
+      data["construct"]
+    end
+
+    def undead
+      data["undead"]
+    end
+
+    def cursed
+      data["cursed"]
+    end
+
+    def corporeal
+      data["corporeal"]
+    end
+
+    # Which of a skin, a part and a bone this creature actually drops. An empty
+    # list is a real answer ("the page names all three as No"); nil is "the page
+    # names none of the three at all", and 48 records are in that state.
+    #
+    # NOT the same question as #skinnable. |Skinnable= only says the SKIN verb
+    # does something here. An adult desert armadillo is skinnable and yields no
+    # hide, only a plated claw. A leg that exists to gather skins wants this;
+    # a leg that merely must not waste time skinning wants #skinnable.
+    def skin_yields
+      data["skin_yields"]
+    end
+
+    def yields?(kind)
+      y = skin_yields
+      y.nil? ? nil : y.include?(kind.to_s)
+    end
+
+    # The empath predicate, per the data file's own mode-derivation rules:
+    # an empath may attack a construct or an undead and nothing else.
+    #
+    # Three-state on purpose, and the nil must NOT be read as false by a
+    # caller that is about to admit a zone. undead and cursed come from one
+    # four-way |Evil= field, so an absent field leaves undead nil rather than
+    # false, and "construct: false, undead: nil" is genuinely unknown. Guessing
+    # false there is a guild-law violation, not lost yield.
+    def construct_or_undead
+      return true if construct == true || undead == true
+      return false if construct == false && undead == false
+
+      nil
+    end
+
+    # Did anyone read a {{Critter}} infobox for this creature at all? False for
+    # the 20 records whose page is missing or carries no infobox.
+    def flags_known?
+      data.dig("provenance", "flags") == "elanthipedia_critter_infobox"
+    end
+
+    # The page contradicts ITSELF: |Skinnable= disagrees with the three yield
+    # fields. 8 records carry it. Neither half is resolved in the data, so a
+    # caller that cares must decide, and most callers should simply exclude.
+    def flags_review?
+      data["flags_review"] == true
+    end
+
+    def flags_review_reason
+      data["flags_review_reason"]
+    end
+  end
+
+  # Zone-level rollups over the enrichment flags, for the mode derivation the
+  # data file's header specifies and deliberately does not store: modes are
+  # derived at load time, never written down.
+  #
+  # Extracted into a module for the same reason CritterBands is: the test
+  # double includes it, so the rules under test are these rules.
+  #
+  # HOW A nil COUNTS. Every ratio below divides by the WHOLE roster, so an
+  # unknown creature drags the ratio down exactly as a false does. That is the
+  # conservative direction for a threshold rule -- a zone is not promoted to a
+  # skinning zone on the strength of creatures nobody has checked. It also
+  # makes the ratio alone ambiguous, so #flag_census reports the three counts
+  # separately and a caller that wants to say WHY a zone missed can.
+  #
+  # AN EMPTY ROSTER IS nil, NOT ZERO. 32 zones carry no critter_refs at all.
+  # A ratio over nothing is undefined, and answering 0.0 would read as "checked,
+  # and none of them qualify".
+  module CritterFlags
+    QUALIFYING = { "skinnable" => :skinnable, "drops_boxes" => :drops_boxes,
+                   "cursed" => :cursed, "construct" => :construct,
+                   "undead" => :undead, "corporeal" => :corporeal }.freeze
+
+    # Every creature on this zone's roster, as Critter readers. Resolved through
+    # critter_refs, never by bare noun: 13 nouns map to 2 or 3 records.
+    #
+    # A ref pointing at a record the dictionary does not hold yields a Critter
+    # over an empty hash rather than a nil, so a caller counting a roster gets
+    # the roster's real size and the record reads as all-unknown. Dropping it
+    # instead would shrink the denominator and quietly raise every ratio.
+    def critters_in(zone)
+      zone.critter_refs.map { |_noun, key| Critter.new(key, critters[key]) }
+    end
+
+    # Fraction of the roster for which `flag` is true, or nil when the zone has
+    # no roster. See the module comment for why nil counts against.
+    def qualifying_ratio(zone, flag)
+      roster = critters_in(zone)
+      return nil if roster.empty?
+
+      reader = QUALIFYING.fetch(flag.to_s)
+      roster.count { |critter| critter.public_send(reader) == true }.to_f / roster.size
+    end
+
+    # true / false / unknown counts for one flag, so a report can say whether a
+    # zone missed a threshold on evidence or on ignorance.
+    def flag_census(zone, flag)
+      reader = QUALIFYING.fetch(flag.to_s)
+      values = critters_in(zone).map { |critter| critter.public_send(reader) }
+      { yes: values.count(true), no: values.count(false), unknown: values.count(nil) }
+    end
+
+    # The empath mode gate. EVERY creature in the zone must be a construct or an
+    # undead, and an unknown creature fails it.
+    #
+    # This one stays a hard all_of with no threshold, per the data file's own
+    # rule: a non-qualifying creature here is an empath attacking a living
+    # thing, which is a guild-law violation rather than lost yield, so there is
+    # no ratio at which it becomes acceptable. An empty roster fails too -- a
+    # zone with nothing recorded cannot promise what lives in it.
+    def all_construct_or_undead?(zone)
+      roster = critters_in(zone)
+      return false if roster.empty?
+
+      roster.all? { |critter| critter.construct_or_undead == true }
+    end
+
+    # The `normal` mode gate: is there anything here worth stopping for? True
+    # when ANY creature on the roster is skinnable or drops boxes. Unknown
+    # creatures neither help nor block, so a zone whose roster is entirely
+    # unknown answers false.
+    def any_loot?(zone)
+      critters_in(zone).any? { |critter| critter.skinnable == true || critter.drops_boxes == true }
+    end
+  end
+
   # Extracted into a module for one reason: spec/support/fake_zone_table.rb
   # includes it too, so the double in the tests runs THIS code rather than a
   # copy of it or a stub that always answers yes. A double that answers a
@@ -198,6 +374,7 @@ module UberCombat
 
   class ZoneTable
     include CritterBands
+    include CritterFlags
 
     DEFAULT_PATH = File.expand_path("../data/base-uc-zones.yaml", __dir__)
 
@@ -251,6 +428,17 @@ module UberCombat
     def critter_for(zone, noun)
       key = zone.critter_refs[noun]
       key && critters[key]
+    end
+
+    # The same lookup as #critter_for, wrapped in a Critter reader. Kept
+    # separate rather than changing what #critter_for returns, because the
+    # picker and the data-integrity specs read that raw hash directly.
+    #
+    # Returns nil for an unrostered noun, exactly as #critter_for does. That is
+    # a wanderer, not an error.
+    def critter_record_for(zone, noun)
+      key = zone.critter_refs[noun]
+      key && Critter.new(key, critters[key])
     end
   end
 end

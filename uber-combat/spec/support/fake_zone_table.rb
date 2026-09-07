@@ -9,6 +9,11 @@ class FakeZoneTable
   # test and still send a character to golden_atiket.
   include UberCombat::CritterBands
 
+  # The real rollups too, for the same reason. A double that answered
+  # all_construct_or_undead? more generously than production would let an
+  # empath be routed at a living creature and still pass every test.
+  include UberCombat::CritterFlags
+
   attr_reader :zones, :critters
 
   def initialize(zones, critters = {})
