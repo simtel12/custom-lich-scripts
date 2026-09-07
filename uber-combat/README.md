@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-513 examples, about 5 seconds, no game needed.
+517 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -307,12 +307,20 @@ creature then DISSECT does too, so `Critter#dissectable` is an alias of
 leg therefore select the same zones and differ only in what the overlay writes
 into the `skinning` block.
 
-**`corporeal` is an avoidance filter.** Incorporeal creatures resist ordinary
-weapons, so `ZoneTable#all_corporeal?` admits a zone only when every rostered
-creature is known corporeal. 12 creatures are incorporeal, 9 of them undead,
-and 3 of them not -- the filter asks about corporeality, not undeath. 284 zones
+**`corporeal` is an avoidance filter, and a separate axis from undeath.**
+Incorporeal creatures resist ordinary weapons, so `ZoneTable#all_corporeal?`
+admits a zone only when every rostered creature is known corporeal. 284 zones
 pass; of the 79 refused, 16 hold a known incorporeal, 29 have no roster, and 34
 are refused purely on an unknown flag.
+
+A character can need this gate AND the empath one, because they answer
+different questions: `all_construct_or_undead?` is guild law, what an empath
+may attack, while `all_corporeal?` is capability, what a non-cleric can hurt.
+An empath may and should fight a corporeal undead -- 35 of the 44 undead are
+corporeal -- and cannot touch the other 9. So a real empath is admitted by the
+intersection, which is **59** zones rather than 75. Neither flag substitutes
+for the other: undeath does not imply incorporeality, and an emaciated
+umbramagus is incorporeal without being undead.
 
 The zone rollups (`qualifying_ratio`, `flag_census`, `all_construct_or_undead?`,
 `all_corporeal?`, `any_loot?`) are computed at load time and never stored, per

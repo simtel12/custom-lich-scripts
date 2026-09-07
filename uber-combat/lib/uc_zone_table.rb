@@ -322,10 +322,21 @@ module UberCombat
     # Is every creature here one an ordinary weapon can touch?
     #
     # The gate for a character with no answer to an incorporeal creature, which
-    # is most of them: 12 records are incorporeal and 9 of those are undead,
-    # spread over 16 zones. Note it is asked about CORPOREALITY, not about
-    # undeath -- an emaciated umbramagus is incorporeal and not undead, and it
-    # is just as untouchable.
+    # is everyone but a cleric: 12 records are incorporeal, spread over 16
+    # zones.
+    #
+    # THIS IS A DIFFERENT AXIS FROM all_construct_or_undead?, AND A CHARACTER
+    # CAN NEED BOTH (user, 2026-09-07). That predicate is GUILD LAW -- what an
+    # empath MAY attack. This one is CAPABILITY -- what a non-cleric CAN hurt.
+    # They are independent: 35 of the 44 undead are corporeal, and an empath
+    # may and should fight those; what it cannot do, being no cleric, is touch
+    # the other 9. So an empath is admitted by the INTERSECTION of the two,
+    # which is 59 zones rather than the 75 the guild rule alone allows.
+    #
+    # Neither flag substitutes for the other in either direction. Undeath does
+    # not imply incorporeality, and incorporeality does not imply undeath: an
+    # emaciated umbramagus is incorporeal, not undead, and untouchable all the
+    # same.
     #
     # Fails an unknown and fails an empty roster, for the reason
     # all_construct_or_undead? does. This is an avoidance filter, and the

@@ -444,6 +444,24 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
     expect(odd.map(&:key)).to contain_exactly("Emaciated_umbramagus", "Gaunt_shadow_master", "Moss_mey")
   end
 
+  # Undeath and corporeality are independent, and the table proves it: most
+  # undead are corporeal, which is exactly the kind an empath may and can
+  # fight. Neither flag can stand in for the other.
+  it "splits the undead 35 corporeal to 9 incorporeal, with none unknown" do
+    undead = records.select { |r| r.undead == true }
+    split = [undead.count { |r| r.corporeal == true }, undead.count { |r| r.corporeal == false },
+             undead.count { |r| r.corporeal.nil? }]
+
+    expect(split).to eq([35, 9, 0])
+  end
+
+  # No construct is incorporeal. That is what makes a hand-verified
+  # corporeal: true on the construct pages missing the field a low-risk
+  # correction rather than a guess.
+  it "records no incorporeal construct at all" do
+    expect(records.count { |r| r.construct == true && r.corporeal == false }).to eq(0)
+  end
+
   describe "the zone rollups" do
     # The empath gate. 75 zones hold nothing but constructs and undead, which
     # is the whole empath-legal hunting map as elanthipedia currently records
@@ -475,6 +493,37 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
       end
 
       expect([refused.size, known, unknown_only]).to eq([79, 16, 34])
+    end
+
+    # The two gates are INDEPENDENT AXES and a character needs both answered,
+    # not one instead of the other (user, 2026-09-07):
+    #
+    #   all_construct_or_undead?  guild law -- what an empath MAY attack
+    #   all_corporeal?            capability -- what a non-cleric CAN hurt
+    #
+    # An empath may attack a corporeal undead and usually should; what it
+    # cannot do, being no cleric, is touch an incorporeal one. So an empath
+    # who is not a cleric is admitted by the INTERSECTION, and that is 59
+    # zones, not the 75 the guild rule alone allows.
+    it "leaves an empath 59 zones once the corporeal gate is applied too" do
+      empath = table.zones.select { |zone| table.all_construct_or_undead?(zone) }
+      both = empath.select { |zone| table.all_corporeal?(zone) }
+
+      expect([empath.size, both.size]).to eq([75, 59])
+    end
+
+    # Of the 16 the corporeal gate takes off an empath, 12 genuinely hold an
+    # incorporeal creature. The other 4 are constructs whose page omits
+    # |Corporeal=, and no construct anywhere in the table is incorporeal, so
+    # they are the strongest candidates for a hand-verified override.
+    it "loses 4 of those to an unknown flag rather than a known incorporeal" do
+      lost = table.zones.select do |zone|
+        table.all_construct_or_undead?(zone) && !table.all_corporeal?(zone)
+      end
+      unknown_only = lost.reject { |zone| table.critters_in(zone).any? { |c| c.corporeal == false } }
+
+      expect([lost.size, unknown_only.map(&:key).sort])
+        .to eq([16, %w[clay_slayer clay_slayer_fibrous clay_slayer_glazed snippets]])
     end
 
     it "finds 293 zones with something worth looting" do
