@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-496 examples, about 5 seconds, no game needed.
+513 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -301,11 +301,24 @@ alignment is unknown. Attacking a living creature is a guild-law violation, not
 lost yield, so `ZoneTable#all_construct_or_undead?` fails an unknown and fails
 an empty roster.
 
+**Skinning and dissecting are one permission.** If the SKIN verb works on a
+creature then DISSECT does too, so `Critter#dissectable` is an alias of
+`skinnable` rather than a second stored flag. A skinning leg and a First Aid
+leg therefore select the same zones and differ only in what the overlay writes
+into the `skinning` block.
+
+**`corporeal` is an avoidance filter.** Incorporeal creatures resist ordinary
+weapons, so `ZoneTable#all_corporeal?` admits a zone only when every rostered
+creature is known corporeal. 12 creatures are incorporeal, 9 of them undead,
+and 3 of them not -- the filter asks about corporeality, not undeath. 284 zones
+pass; of the 79 refused, 16 hold a known incorporeal, 29 have no roster, and 34
+are refused purely on an unknown flag.
+
 The zone rollups (`qualifying_ratio`, `flag_census`, `all_construct_or_undead?`,
-`any_loot?`) are computed at load time and never stored, per the data file's own
-rule. They put 293 zones in `normal`, 190 in `skin`, 140 in `lockpick`, 31 in
-`cleric` and 75 in `empath`. `necro` still needs `ritual_eligible`, which the
-wiki does not carry.
+`all_corporeal?`, `any_loot?`) are computed at load time and never stored, per
+the data file's own rule. They put 293 zones in `normal`, 190 in `skin`, 140 in
+`lockpick`, 31 in `cleric` and 75 in `empath`. `necro` still needs
+`ritual_eligible`, which the wiki does not carry.
 
 Nothing consumes these yet. The picker, the overlay and the director are
 unchanged; `43-critter-enrichment.md` proposes what should consume them.

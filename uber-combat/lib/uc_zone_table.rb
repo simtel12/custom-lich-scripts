@@ -198,6 +198,28 @@ module UberCombat
       y.nil? ? nil : y.include?(kind.to_s)
     end
 
+    # Dissecting is the same permission as skinning: if the SKIN verb works on
+    # a creature then DISSECT does too (user, 2026-09-07). Elanthipedia carries
+    # no separate field and needs none.
+    #
+    # An alias rather than a second harvested flag, because the two can never
+    # disagree and storing them apart would invite a data pass to make them.
+    # It exists as its own name because the leg that reads it is a different
+    # leg: a First Aid leg dissects, a skinning leg skins, and both want this
+    # question rather than skin_yields.
+    def dissectable
+      skinnable
+    end
+
+    # Incorporeal creatures resist ordinary weapons, so a zone holding one is a
+    # bad posting for a character with no way to touch it. Three-state, and the
+    # nil is the point: 24 records do not say, and an avoidance filter is
+    # exactly where an unknown must not read as "safe".
+    def incorporeal
+      c = corporeal
+      c.nil? ? nil : !c
+    end
+
     # The empath predicate, per the data file's own mode-derivation rules:
     # an empath may attack a construct or an undead and nothing else.
     #
@@ -295,6 +317,25 @@ module UberCombat
       return false if roster.empty?
 
       roster.all? { |critter| critter.construct_or_undead == true }
+    end
+
+    # Is every creature here one an ordinary weapon can touch?
+    #
+    # The gate for a character with no answer to an incorporeal creature, which
+    # is most of them: 12 records are incorporeal and 9 of those are undead,
+    # spread over 16 zones. Note it is asked about CORPOREALITY, not about
+    # undeath -- an emaciated umbramagus is incorporeal and not undead, and it
+    # is just as untouchable.
+    #
+    # Fails an unknown and fails an empty roster, for the reason
+    # all_construct_or_undead? does. This is an avoidance filter, and the
+    # direction of a wrong answer here is a character swinging all stint at
+    # something it cannot hit.
+    def all_corporeal?(zone)
+      roster = critters_in(zone)
+      return false if roster.empty?
+
+      roster.all? { |critter| critter.corporeal == true }
     end
 
     # The `normal` mode gate: is there anything here worth stopping for? True

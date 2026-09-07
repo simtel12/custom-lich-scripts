@@ -67,6 +67,38 @@ RSpec.describe UberCombat::Critter do
     end
   end
 
+  # Dissecting is the same permission as skinning, so a First Aid leg and a
+  # skinning leg select on the same flag and differ only in what the overlay
+  # tells combat-trainer to do with the corpse.
+  describe "#dissectable" do
+    it "is true where the SKIN verb works" do
+      expect(critter("skinnable" => true).dissectable).to be(true)
+    end
+
+    it "is false where it does not" do
+      expect(critter("skinnable" => false).dissectable).to be(false)
+    end
+
+    it "is unknown where skinnable is unknown" do
+      expect(critter({}).dissectable).to be_nil
+    end
+  end
+
+  describe "#incorporeal" do
+    it "is true for a creature an ordinary weapon cannot touch" do
+      expect(critter("corporeal" => false).incorporeal).to be(true)
+    end
+
+    it "is false for an ordinary one" do
+      expect(critter("corporeal" => true).incorporeal).to be(false)
+    end
+
+    # An avoidance filter is exactly where an unknown must not read as "safe".
+    it "stays unknown rather than assuming corporeal" do
+      expect(critter({}).incorporeal).to be_nil
+    end
+  end
+
   describe "#construct_or_undead" do
     it "is true for a construct" do
       expect(critter("construct" => true, "undead" => false).construct_or_undead).to be(true)
@@ -227,6 +259,45 @@ RSpec.describe UberCombat::CritterFlags do
     end
   end
 
+  describe "#all_corporeal?" do
+    it "admits a roster nothing incorporeal lives in" do
+      table, zone = table_with({ "A" => { "corporeal" => true }, "B" => { "corporeal" => true } },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_corporeal?(zone)).to be(true)
+    end
+
+    it "refuses a roster holding one incorporeal creature" do
+      table, zone = table_with({ "A" => { "corporeal" => true }, "B" => { "corporeal" => false } },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_corporeal?(zone)).to be(false)
+    end
+
+    # The whole reason the flag stays three-state. A character sent here on an
+    # assumed corporeal swings all stint at something it cannot hit.
+    it "refuses a roster holding one unknown creature" do
+      table, zone = table_with({ "A" => { "corporeal" => true }, "B" => {} },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_corporeal?(zone)).to be(false)
+    end
+
+    it "refuses an empty roster" do
+      table, zone = table_with({}, {})
+
+      expect(table.all_corporeal?(zone)).to be(false)
+    end
+
+    # Corporeality is the question, not undeath. An emaciated umbramagus is
+    # incorporeal and not undead, and it is just as untouchable.
+    it "refuses an incorporeal creature that is not undead" do
+      table, zone = table_with({ "A" => { "corporeal" => false, "undead" => false } }, { "a" => "A" })
+
+      expect(table.all_corporeal?(zone)).to be(false)
+    end
+  end
+
   describe "#any_loot?" do
     it "is true when one creature is skinnable" do
       table, zone = table_with({ "A" => yes(:skinnable), "B" => {} }, { "a" => "A", "b" => "B" })
@@ -337,6 +408,42 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
     expect(records.select(&:flags_review?).map(&:flags_review_reason).compact.size).to eq(8)
   end
 
+  # skinnable is HARVESTED, not derived from skin_yields, and these two
+  # examples are why. Deriving would answer a worse question on 36 records:
+  # 28 where the page states Skinnable and names no yield fields at all, and
+  # the 8 where the two halves contradict each other.
+  #
+  # It is also the wrong question. The zone preference asks whether the SKIN
+  # verb works here, which is what |Skinnable= says; skin_yields answers what
+  # falls out afterwards, which is interesting and does not select a zone.
+  it "knows skinnable for 28 records that name no yield fields" do
+    derivable_only = records.select { |r| !r.skinnable.nil? && r.skin_yields.nil? }
+
+    expect([derivable_only.size, derivable_only.count { |r| r.skinnable == false }]).to eq([28, 27])
+  end
+
+  it "disagrees with a derived skinnable on exactly the 8 review records" do
+    both_known = records.reject { |r| r.skinnable.nil? || r.skin_yields.nil? }
+    disagreeing = both_known.reject { |r| r.skinnable == !r.skin_yields.empty? }
+
+    expect(disagreeing.map(&:flags_review?)).to eq([true] * 8)
+  end
+
+  # Incorporeal creatures resist ordinary weapons. 9 of the 12 are undead,
+  # which is the pairing that makes them hard for anyone but a cleric, but the
+  # other 3 are just as untouchable and corporeality is what the filter asks.
+  it "counts 12 incorporeal creatures, 9 of them undead" do
+    incorporeal = records.select { |r| r.incorporeal == true }
+
+    expect([incorporeal.size, incorporeal.count { |r| r.undead == true }]).to eq([12, 9])
+  end
+
+  it "names the 3 incorporeal creatures that are not undead" do
+    odd = records.select { |r| r.incorporeal == true && r.undead != true }
+
+    expect(odd.map(&:key)).to contain_exactly("Emaciated_umbramagus", "Gaunt_shadow_master", "Moss_mey")
+  end
+
   describe "the zone rollups" do
     # The empath gate. 75 zones hold nothing but constructs and undead, which
     # is the whole empath-legal hunting map as elanthipedia currently records
@@ -349,6 +456,25 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
       empath = table.zones.select { |zone| table.all_construct_or_undead?(zone) }.map(&:key)
 
       expect(empath).to include("granite_gargoyles", "zombie_maulers", "clay_soldier")
+    end
+
+    # The gate for a character with no answer to an incorporeal creature.
+    # The 79 it refuses break down as 16 that hold a known incorporeal, 29
+    # with no roster at all, and 34 refused purely on an unknown corporeal.
+    # That last number is the price of failing safe, and it is the one to
+    # watch: it shrinks as the wiki fills in, and no code change is needed.
+    it "finds 284 zones where everything is known corporeal" do
+      expect(table.zones.count { |zone| table.all_corporeal?(zone) }).to eq(284)
+    end
+
+    it "refuses 16 zones for a known incorporeal and 34 for an unknown one" do
+      refused = table.zones.reject { |zone| table.all_corporeal?(zone) }
+      known = refused.count { |zone| table.critters_in(zone).any? { |c| c.corporeal == false } }
+      unknown_only = refused.count do |zone|
+        !zone.critter_refs.empty? && table.critters_in(zone).none? { |c| c.corporeal == false }
+      end
+
+      expect([refused.size, known, unknown_only]).to eq([79, 16, 34])
     end
 
     it "finds 293 zones with something worth looting" do
