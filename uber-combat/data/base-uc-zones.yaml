@@ -9380,10 +9380,47 @@ zones:
 #                     the per-field provenance convention used elsewhere in
 #                     this file.
 #
-# NOT covered by this pass (still deferred to the "Critter enrichment"
-# candidate packet in 99-progress.md, which needs an actual elanthipedia
-# fetch, not just this comment parse): skinnable / drops_boxes / construct /
-# undead / corporeal / cursed / ritual_eligible / arrange_type.
+# NOT covered by this pass: ritual_eligible / arrange_type. The other six
+# flags this line once deferred -- skinnable, drops_boxes, construct,
+# undead, corporeal, cursed -- were filled by the Critter enrichment pass;
+# see the ENRICHMENT FLAGS block below and
+# notes/uber-combat/43-critter-enrichment.md.
+#
+# ENRICHMENT FLAGS (Critter enrichment pass, 43-critter-enrichment.md):
+#   skinnable / drops_boxes / construct / undead / cursed / corporeal:
+#             true / false / null, on every critter. Sourced from the
+#             {{Critter}} infobox fields |Skinnable=, |Has Boxes=,
+#             |Construct=, |Evil= and |Corporeal=.
+#   skin_yields: which of a skin, a part and a bone the creature actually
+#             drops, as a list, from |hasskin= |haspart= |hasbone=. An empty
+#             list means the page names all three as No. null means the page
+#             names none of the three at all.
+#             THIS IS NOT THE SAME QUESTION AS skinnable. |Skinnable= only
+#             says the SKIN verb does something here; a creature can be
+#             skinnable and still yield no hide (adult desert armadillo:
+#             Skinnable=yes, hasskin=No, haspart=Yes). A skinning leg wants
+#             skin_yields; the empath mode wants construct/undead.
+#   null IS NOT false, for exactly the reason it is not on premium.
+#             Template:Critter's #switch has cases only for y|yes and n|no
+#             and renders anything else, an absent field included, as
+#             "Unknown". Read null as "nobody has checked", and treat it as
+#             an exclusion wherever a false would have admitted something.
+#   undead and cursed ARE ONE FIELD. |Evil= is a four-way alignment
+#             (cursed / undead / holy / no), not a boolean, so the two are
+#             never both true and an ABSENT |Evil= leaves BOTH null. It
+#             cannot be read as "not undead". That matters: the empath mode
+#             predicate is construct-or-undead, where a wrong false is a
+#             guild-law violation, not lost yield.
+#   flags_review: true plus flags_review_reason, present only where the page
+#             contradicts ITSELF (|Skinnable= against the three yield
+#             fields). Neither half is resolved, because choosing one would
+#             be a guess at which the editor meant.
+#   provenance.flags names the route for all seven fields at once:
+#             elanthipedia_critter_infobox  the page had a {{Critter}}
+#                                           infobox and was read.
+#             unresolved                    the page is missing or carries no
+#                                           {{Critter}} infobox, so all seven
+#                                           are null.
 # ---------------------------------------------------------------------------
 critters:
   Adan'f_blood_warrior:
@@ -9395,10 +9432,18 @@ critters:
     rank_confidence: high
     source_lines: [1734]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Adan'f_shadow_mage:
     noun: "adan'f shadow mage"
     slug: "Adan'f_shadow_mage"
@@ -9408,10 +9453,18 @@ critters:
     rank_confidence: high
     source_lines: [1733]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Adan'f_spirit_dancer:
     noun: "adan'f spirit dancer"
     slug: "Adan'f_spirit_dancer"
@@ -9421,10 +9474,18 @@ critters:
     rank_confidence: high
     source_lines: [1827]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Adult_desert_armadillo:
     noun: "adult desert armadillo"
     slug: "Adult_desert_armadillo"
@@ -9434,10 +9495,18 @@ critters:
     rank_confidence: high
     source_lines: [141, 3484]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Adult_elder_armadillo:
     noun: "adult elder armadillo"
     slug: "Adult_elder_armadillo"
@@ -9447,10 +9516,18 @@ critters:
     rank_confidence: high
     source_lines: [148]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Adult_razortusk_boar:
     noun: "adult razortusk boar"
     slug: "Adult_razortusk_boar"
@@ -9460,10 +9537,18 @@ critters:
     rank_confidence: high
     source_lines: [313, 3143]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Adult_wyvern:
     noun: "adult wyvern"
     slug: "Adult_wyvern"
@@ -9473,10 +9558,18 @@ critters:
     rank_confidence: high
     source_lines: [1950]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Alley_thug:
     noun: "alley thug"
     slug: "Alley_thug"
@@ -9486,10 +9579,18 @@ critters:
     rank_confidence: high
     source_lines: [297, 2278]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Angiswaerd_hatchling:
     noun: "angiswaerd hatchling"
     slug: "Angiswaerd_hatchling"
@@ -9499,10 +9600,18 @@ critters:
     rank_confidence: high
     source_lines: [301, 2354]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Arbelog:
     noun: "arbelog"
     slug: "Arbelog"
@@ -9512,10 +9621,18 @@ critters:
     rank_confidence: high
     source_lines: [226, 2107]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Armored_shalswar:
     noun: "armored shalswar"
     slug: "Armored_shalswar"
@@ -9525,10 +9642,18 @@ critters:
     rank_confidence: high
     source_lines: [2842]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Armored_warklin:
     noun: "armored warklin"
     slug: "Armored_warklin"
@@ -9538,10 +9663,18 @@ critters:
     rank_confidence: high
     source_lines: [1232]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Arthelun_cabalist:
     noun: "arthelun cabalist"
     slug: "Arthelun_cabalist"
@@ -9551,10 +9684,18 @@ critters:
     rank_confidence: high
     source_lines: [1376, 1390]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Asaren_Celpeze:
     noun: "asaren celpeze"
     slug: "Asaren_Celpeze"
@@ -9564,10 +9705,18 @@ critters:
     rank_confidence: high
     source_lines: [330, 3429]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Asaren_celpeze_(2):
     noun: "asaren celpeze"
     slug: "Asaren_celpeze_(2)"
@@ -9577,10 +9726,18 @@ critters:
     rank_confidence: high
     source_lines: [3443]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Asaren_celpeze_(3):
     noun: "asaren celpeze"
     slug: "Asaren_celpeze_(3)"
@@ -9590,10 +9747,18 @@ critters:
     rank_confidence: high
     source_lines: [3453]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Ashu_hhinvi:
     noun: "ashu hhinvi"
     slug: "Ashu_hhinvi"
@@ -9603,10 +9768,18 @@ critters:
     rank_confidence: high
     source_lines: [208, 2627]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Baby_forest_gryphon:
     noun: "baby forest gryphon"
     slug: "Baby_forest_gryphon"
@@ -9616,10 +9789,18 @@ critters:
     rank_confidence: high
     source_lines: [255, 1713, 2401]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Bawdy_swain:
     noun: "bawdy swain"
     slug: "Bawdy_swain"
@@ -9629,10 +9810,18 @@ critters:
     rank_confidence: high
     source_lines: [317, 3206, 3533]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Beisswurm:
     noun: "beisswurm"
     slug: "Beisswurm"
@@ -9642,10 +9831,18 @@ critters:
     rank_confidence: high
     source_lines: [749]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Beltunumshi_(2):
     noun: "beltunumshi"
     slug: "Beltunumshi_(2)"
@@ -9655,10 +9852,18 @@ critters:
     rank_confidence: high
     source_lines: [1649, 1684]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Birdcatcher_Spider:
     noun: "birdcatcher spider"
     slug: "Birdcatcher_Spider"
@@ -9668,10 +9873,18 @@ critters:
     rank_confidence: high
     source_lines: [2503]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Black_ape:
     noun: "black ape"
     slug: "Black_ape"
@@ -9681,10 +9894,18 @@ critters:
     rank_confidence: high
     source_lines: [2919]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Black_bear:
     noun: "black bear"
     slug: "Black_bear"
@@ -9694,10 +9915,18 @@ critters:
     rank_confidence: high
     source_lines: [224, 2105]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Black_goblin:
     noun: "black goblin"
     slug: "Black_goblin"
@@ -9707,10 +9936,18 @@ critters:
     rank_confidence: high
     source_lines: [2909]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Black_marble_gargoyle:
     noun: "black marble gargoyle"
     slug: "Black_marble_gargoyle"
@@ -9720,10 +9957,18 @@ critters:
     rank_confidence: high
     source_lines: [2862]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Blood_dryad:
     noun: "blood dryad"
     slug: "Blood_dryad"
@@ -9733,10 +9978,18 @@ critters:
     rank_confidence: high
     source_lines: [522]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Blood_wolf_(1):
     noun: "blood wolf"
     slug: "Blood_wolf_(1)"
@@ -9746,10 +9999,18 @@ critters:
     rank_confidence: high
     source_lines: [790]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Blood_wolf_(2):
     noun: "blood wolf"
     slug: "Blood_wolf_(2)"
@@ -9759,10 +10020,18 @@ critters:
     rank_confidence: high
     source_lines: [162, 2179, 3118]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Blue-belly_crocodile:
     noun: "blue-belly crocodile"
     slug: "Blue-belly_crocodile"
@@ -9772,10 +10041,18 @@ critters:
     rank_confidence: high
     source_lines: [33, 295, 1524, 2240]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Blue-dappled_prereni_(1):
     noun: "blue-dappled prereni"
     slug: "Blue-dappled_prereni_(1)"
@@ -9785,10 +10062,18 @@ critters:
     rank_confidence: high
     source_lines: [1617]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Blue-dappled_prereni_(2):
     noun: "blue-dappled prereni"
     slug: "Blue-dappled_prereni_(2)"
@@ -9798,10 +10083,18 @@ critters:
     rank_confidence: high
     source_lines: [1623]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Bobcat:
     noun: "bobcat"
     slug: "Bobcat"
@@ -9811,10 +10104,18 @@ critters:
     rank_confidence: high
     source_lines: [712, 3119]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Bone_wolf:
     noun: "bone wolf"
     slug: "Bone_wolf"
@@ -9824,10 +10125,18 @@ critters:
     rank_confidence: high
     source_lines: [740]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Bone_wyvern:
     noun: "bone wyvern"
     slug: "Bone_wyvern"
@@ -9837,10 +10146,18 @@ critters:
     rank_confidence: high
     source_lines: [2013]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Bony_wind_wretch:
     noun: "bony wind wretch"
     slug: "Bony_wind_wretch"
@@ -9851,10 +10168,18 @@ critters:
     rank_notes: "trailing-'?' band ('700-1000?')"
     source_lines: [2985]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: null
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Boobrie:
     noun: "boobrie"
     slug: "Boobrie"
@@ -9864,10 +10189,18 @@ critters:
     rank_confidence: high
     source_lines: [230, 2125]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Bristle-backed_peccary:
     noun: "bristle-backed peccary"
     slug: "Bristle-backed_peccary"
@@ -9877,10 +10210,18 @@ critters:
     rank_confidence: high
     source_lines: [271, 2476, 3376]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Bronze_leucro:
     noun: "bronze leucro"
     slug: "Bronze_leucro"
@@ -9891,10 +10232,18 @@ critters:
     rank_notes: "both-ends-uncertain band ('575?-800?')"
     source_lines: [2619]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Cadaverous_blue-belly_crocodile:
     noun: "cadaverous blue-belly crocodile"
     slug: "Cadaverous_blue-belly_crocodile"
@@ -9904,10 +10253,20 @@ critters:
     rank_confidence: high
     source_lines: [1530]
     premium: null
+    skinnable: true
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Caracal:
     noun: "caracal"
     slug: "Caracal"
@@ -9917,10 +10276,18 @@ critters:
     rank_confidence: high
     source_lines: [3313]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Cave_bear:
     noun: "cave bear"
     slug: "Cave_bear"
@@ -9930,10 +10297,18 @@ critters:
     rank_confidence: high
     source_lines: [723]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Cave_troll:
     noun: "cave troll"
     slug: "Cave_troll"
@@ -9943,10 +10318,18 @@ critters:
     rank_confidence: high
     source_lines: [1095]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Cinderwing_harpy:
     noun: "cinderwing harpy"
     slug: "Cinderwing_harpy"
@@ -9956,10 +10339,20 @@ critters:
     rank_confidence: high
     source_lines: [3517]
     premium: null
+    skinnable: true
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Clay_slayer_(creature):
     noun: "clay slayer"
     slug: "Clay_slayer_(creature)"
@@ -9969,10 +10362,18 @@ critters:
     rank_confidence: high
     source_lines: [2641]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Cloud_rat:
     noun: "cloud rat"
     slug: "Cloud_rat"
@@ -9982,10 +10383,18 @@ critters:
     rank_confidence: high
     source_lines: [1768, 1778]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Clouded_arzumos:
     noun: "clouded arzumos"
     slug: "Clouded_arzumos"
@@ -9995,10 +10404,18 @@ critters:
     rank_confidence: high
     source_lines: [1691, 1701, 3539]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Copperhead_viper:
     noun: "copperhead viper"
     slug: "Copperhead_viper"
@@ -10008,10 +10425,18 @@ critters:
     rank_confidence: high
     source_lines: [781]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Corsair:
     noun: "corsair"
     slug: "Corsair"
@@ -10022,10 +10447,18 @@ critters:
     rank_notes: "fully-unknown band ('? - ?')"
     source_lines: [3547]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Cougar:
     noun: "cougar"
     slug: "Cougar"
@@ -10042,10 +10475,18 @@ critters:
         reason: "wider/disagreeing band discarded in favor of narrower reconciled band (A2-style)"
     source_lines: [159, 533, 568, 607, 714, 2077]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Crauyarin_scuttler:
     noun: "crauyarin scuttler"
     slug: "Crauyarin_scuttler"
@@ -10055,10 +10496,18 @@ critters:
     rank_confidence: high
     source_lines: [1263]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Croff_pothanit:
     noun: "croff pothanit"
     slug: "Croff_pothanit"
@@ -10068,10 +10517,18 @@ critters:
     rank_confidence: high
     source_lines: [509, 516]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Crypt_fiend:
     noun: "crypt fiend"
     slug: "Crypt_fiend"
@@ -10081,10 +10538,18 @@ critters:
     rank_confidence: high
     source_lines: [896]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Dark_fiend:
     noun: "dark fiend"
     slug: "Dark_fiend"
@@ -10094,10 +10559,18 @@ critters:
     rank_confidence: high
     source_lines: [2140]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dark_spirit:
     noun: "dark spirit"
     slug: "Dark_spirit"
@@ -10107,10 +10580,18 @@ critters:
     rank_confidence: high
     source_lines: [2274]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Dark_sprite_(1):
     noun: "dark sprite"
     slug: "Dark_sprite_(1)"
@@ -10121,10 +10602,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [2380]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Decaying_blightwater_nyad:
     noun: "decaying blightwater nyad"
     slug: "Decaying_blightwater_nyad"
@@ -10134,10 +10623,18 @@ critters:
     rank_confidence: high
     source_lines: [2757]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dinnsehencha:
     noun: "dinnsehencha"
     slug: "Dinnsehencha"
@@ -10147,10 +10644,18 @@ critters:
     rank_confidence: high
     source_lines: [3019]
     premium: true
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Dire_Bear:
     noun: "dire bear"
     slug: "Dire_Bear"
@@ -10160,10 +10665,18 @@ critters:
     rank_confidence: high
     source_lines: [932, 942]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Dobek_moruryn:
     noun: "dobek moruryn"
     slug: "Dobek_moruryn"
@@ -10174,10 +10687,18 @@ critters:
     rank_notes: "'to'-separated band ('300 to 450') parsed as a normal range"
     source_lines: [3395]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Dragon_Priest_assassin:
     noun: "dragon priest assassin"
     slug: "Dragon_Priest_assassin"
@@ -10187,10 +10708,18 @@ critters:
     rank_confidence: high
     source_lines: [3000]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dragon_Priest_intercessor:
     noun: "dragon priest intercessor"
     slug: "Dragon_Priest_intercessor"
@@ -10200,10 +10729,18 @@ critters:
     rank_confidence: high
     source_lines: [3041]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dragon_Priest_juggernaut:
     noun: "dragon priest juggernaut"
     slug: "Dragon_Priest_juggernaut"
@@ -10213,10 +10750,18 @@ critters:
     rank_confidence: high
     source_lines: [2855]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dragon_Priest_sentinel:
     noun: "dragon priest sentinel"
     slug: "Dragon_Priest_sentinel"
@@ -10226,10 +10771,18 @@ critters:
     rank_confidence: high
     source_lines: [2843]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dragon_Priest_zealot:
     noun: "dragon priest zealot"
     slug: "Dragon_Priest_zealot"
@@ -10239,10 +10792,18 @@ critters:
     rank_confidence: high
     source_lines: [2844, 2892]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Dryad_priestess:
     noun: "dryad priestess"
     slug: "Dryad_priestess"
@@ -10252,10 +10813,18 @@ critters:
     rank_confidence: high
     source_lines: [1012, 1018]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Dusk_Ogre:
     noun: "dusk ogre"
     slug: "Dusk_Ogre"
@@ -10265,10 +10834,18 @@ critters:
     rank_confidence: high
     source_lines: [232, 2132]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Eidolon_steed:
     noun: "eidolon steed"
     slug: "Eidolon_steed"
@@ -10278,10 +10855,18 @@ critters:
     rank_confidence: high
     source_lines: [1538, 1545]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Elder_Adan'f_blademaster:
     noun: "elder adan'f blademaster"
     slug: "Elder_Adan'f_blademaster"
@@ -10291,10 +10876,18 @@ critters:
     rank_confidence: high
     source_lines: [1983]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Elder_Adan'f_sorcerer:
     noun: "elder adan'f sorcerer"
     slug: "Elder_Adan'f_sorcerer"
@@ -10304,10 +10897,18 @@ critters:
     rank_confidence: high
     source_lines: [1998]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Elder_blue-dappled_prereni:
     noun: "elder blue-dappled prereni"
     slug: "Elder_blue-dappled_prereni"
@@ -10324,10 +10925,18 @@ critters:
         reason: "wider/disagreeing band discarded in favor of narrower reconciled band (A2-style)"
     source_lines: [1638, 1644]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Elder_desert_armadillo:
     noun: "elder desert armadillo"
     slug: "Elder_desert_armadillo"
@@ -10337,10 +10946,20 @@ critters:
     rank_confidence: high
     source_lines: [3491]
     premium: null
+    skinnable: true
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Elder_red_brocket_deer:
     noun: "elder red brocket deer"
     slug: "Elder_red_brocket_deer"
@@ -10350,10 +10969,18 @@ critters:
     rank_confidence: high
     source_lines: [91, 174]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Emaciated_umbramagus:
     noun: "emaciated umbramagus"
     slug: "Emaciated_umbramagus"
@@ -10363,10 +10990,18 @@ critters:
     rank_confidence: high
     source_lines: [3347]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Ember_bull:
     noun: "ember bull"
     slug: "Ember_bull"
@@ -10376,10 +11011,18 @@ critters:
     rank_confidence: high
     source_lines: [1146]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Ember_bull_(2):
     noun: "ember bull"
     slug: "Ember_bull_(2)"
@@ -10389,10 +11032,18 @@ critters:
     rank_confidence: high
     source_lines: [1155]
     premium: true
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Emerald_Claw_Troll:
     noun: "emerald claw troll"
     slug: "Emerald_Claw_Troll"
@@ -10402,10 +11053,18 @@ critters:
     rank_confidence: high
     source_lines: [1253]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Endrus_serpent:
     noun: "endrus serpent"
     slug: "Endrus_serpent"
@@ -10415,10 +11074,18 @@ critters:
     rank_confidence: high
     source_lines: [770]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Enraged_tusky:
     noun: "enraged tusky"
     slug: "Enraged_tusky"
@@ -10428,10 +11095,18 @@ critters:
     rank_confidence: high
     source_lines: [2951]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Faenrae_reaver:
     noun: "faenrae reaver"
     slug: "Faenrae_reaver"
@@ -10441,10 +11116,18 @@ critters:
     rank_confidence: high
     source_lines: [731]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Fell_hog:
     noun: "fell hog"
     slug: "Fell_hog"
@@ -10454,10 +11137,18 @@ critters:
     rank_confidence: high
     source_lines: [444]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Fibrous_clay_slayer:
     noun: "fibrous clay slayer"
     slug: "Fibrous_clay_slayer"
@@ -10467,10 +11158,18 @@ critters:
     rank_confidence: high
     source_lines: [2635]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Field_Goblin:
     noun: "field goblin"
     slug: "Field_Goblin"
@@ -10480,10 +11179,18 @@ critters:
     rank_confidence: high
     source_lines: [464]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Fire_Sprite:
     noun: "fire sprite"
     slug: "Fire_Sprite"
@@ -10493,10 +11200,18 @@ critters:
     rank_confidence: high
     source_lines: [827]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Fledgling_forest_gryphon_(1):
     noun: "fledgling forest gryphon"
     slug: "Fledgling_forest_gryphon_(1)"
@@ -10506,10 +11221,18 @@ critters:
     rank_confidence: high
     source_lines: [1715]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Forager_ghoul:
     noun: "forager ghoul"
     slug: "Forager_ghoul"
@@ -10519,10 +11242,18 @@ critters:
     rank_confidence: high
     source_lines: [2653]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Forager_goblin:
     noun: "forager goblin"
     slug: "Forager_goblin"
@@ -10532,10 +11263,18 @@ critters:
     rank_confidence: high
     source_lines: [463]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Forager_wight:
     noun: "forager wight"
     slug: "Forager_wight"
@@ -10545,10 +11284,20 @@ critters:
     rank_confidence: high
     source_lines: [2670]
     premium: null
+    skinnable: true
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Forest_bandit:
     noun: "forest bandit"
     slug: "Forest_bandit"
@@ -10558,10 +11307,18 @@ critters:
     rank_confidence: high
     source_lines: [989]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Forest_geni:
     noun: "forest geni"
     slug: "Forest_geni"
@@ -10571,10 +11328,18 @@ critters:
     rank_confidence: high
     source_lines: [112]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Frost_angiswaerd:
     noun: "frost angiswaerd"
     slug: "Frost_angiswaerd"
@@ -10585,10 +11350,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [2835]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Frostcrone:
     noun: "frostcrone"
     slug: "Frostcrone"
@@ -10598,10 +11371,18 @@ critters:
     rank_confidence: high
     source_lines: [1606]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Frostweaver:
     noun: "frostweaver"
     slug: "Frostweaver"
@@ -10611,10 +11392,18 @@ critters:
     rank_confidence: high
     source_lines: [1599, 3282]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Frostweyr_bear:
     noun: "frostweyr bear"
     slug: "Frostweyr_bear"
@@ -10624,10 +11413,18 @@ critters:
     rank_confidence: high
     source_lines: [2768]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Gale_drake:
     noun: "gale drake"
     slug: "Gale_drake"
@@ -10637,10 +11434,18 @@ critters:
     rank_confidence: high
     source_lines: [3499]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Gam_chaga:
     noun: "gam chaga"
     slug: "Gam_chaga"
@@ -10650,10 +11455,18 @@ critters:
     rank_confidence: high
     source_lines: [204, 2518]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Gaunt_shadow_master:
     noun: "gaunt shadow master"
     slug: "Gaunt_shadow_master"
@@ -10664,10 +11477,18 @@ critters:
     rank_notes: "open-high band ('220-?')"
     source_lines: [323, 3293]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Ghoul_crow:
     noun: "ghoul crow"
     slug: "Ghoul_crow"
@@ -10677,10 +11498,18 @@ critters:
     rank_confidence: high
     source_lines: [3215]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Ghoul_raven:
     noun: "ghoul raven"
     slug: "Ghoul_raven"
@@ -10690,10 +11519,18 @@ critters:
     rank_confidence: high
     source_lines: [3367]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Giant_bear:
     noun: "giant bear"
     slug: "Giant_bear"
@@ -10703,10 +11540,18 @@ critters:
     rank_confidence: high
     source_lines: [1102]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Giant_black_leucro:
     noun: "giant black leucro"
     slug: "Giant_black_leucro"
@@ -10717,10 +11562,18 @@ critters:
     rank_notes: "trailing-'?' band ('160-215?')"
     source_lines: [62, 69]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Giant_black_leucro_(2):
     noun: "giant black leucro"
     slug: "Giant_black_leucro_(2)"
@@ -10730,10 +11583,18 @@ critters:
     rank_confidence: high
     source_lines: [1041]
     premium: true
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Giant_blade_spider:
     noun: "giant blade spider"
     slug: "Giant_blade_spider"
@@ -10743,10 +11604,18 @@ critters:
     rank_confidence: high
     source_lines: [1763]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Giant_blight_ogre:
     noun: "giant blight ogre"
     slug: "Giant_blight_ogre"
@@ -10756,10 +11625,18 @@ critters:
     rank_confidence: high
     source_lines: [2790]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Giant_mechanical_mouse:
     noun: "giant mechanical mouse"
     slug: "Giant_mechanical_mouse"
@@ -10769,10 +11646,18 @@ critters:
     rank_confidence: high
     source_lines: [390]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Giant_thicket_viper:
     noun: "giant thicket viper"
     slug: "Giant_thicket_viper"
@@ -10782,10 +11667,18 @@ critters:
     rank_confidence: high
     source_lines: [236, 966, 2286]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Giant_thicket_viper_(2):
     noun: "giant thicket viper"
     slug: "Giant_thicket_viper_(2)"
@@ -10795,10 +11688,18 @@ critters:
     rank_confidence: high
     source_lines: [974]
     premium: true
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Giant_wolf_spider:
     noun: "giant wolf spider"
     slug: "Giant_wolf_spider"
@@ -10808,10 +11709,18 @@ critters:
     rank_confidence: high
     source_lines: [2152]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Gigantic_lachmate_(1):
     noun: "gigantic lachmate"
     slug: "Gigantic_lachmate_(1)"
@@ -10821,10 +11730,18 @@ critters:
     rank_confidence: high
     source_lines: [1182]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Gigantic_lachmate_(2):
     noun: "gigantic lachmate"
     slug: "Gigantic_lachmate_(2)"
@@ -10834,10 +11751,18 @@ critters:
     rank_confidence: high
     source_lines: [1225]
     premium: true
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: true
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Glazed_clay_slayer:
     noun: "glazed clay slayer"
     slug: "Glazed_clay_slayer"
@@ -10847,10 +11772,18 @@ critters:
     rank_confidence: high
     source_lines: [2647]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Glutinous_lipopod:
     noun: "glutinous lipopod"
     slug: "Glutinous_lipopod"
@@ -10860,10 +11793,18 @@ critters:
     rank_confidence: high
     source_lines: [556]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Goblin_shaman:
     noun: "goblin shaman"
     slug: "Goblin_shaman"
@@ -10873,10 +11814,18 @@ critters:
     rank_confidence: high
     source_lines: [222, 474, 2091]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Golden_scaled_atik'et:
     noun: "golden scaled atik'et"
     slug: "Golden_scaled_atik'et"
@@ -10886,10 +11835,18 @@ critters:
     rank_confidence: high
     source_lines: [47]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Granite_gargoyle:
     noun: "granite gargoyle"
     slug: "Granite_gargoyle"
@@ -10900,10 +11857,18 @@ critters:
     rank_notes: "'to'-separated band ('95 to 125') parsed as a normal range"
     source_lines: [885, 1507]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Grass_eel:
     noun: "grass eel"
     slug: "Grass_eel"
@@ -10913,10 +11878,18 @@ critters:
     rank_confidence: high
     source_lines: [221, 541, 549, 2090]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Grave_worm:
     noun: "grave worm"
     slug: "Grave_worm"
@@ -10926,10 +11899,18 @@ critters:
     rank_confidence: high
     source_lines: [26]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Graverobber_(2):
     noun: "graverobber"
     slug: "Graverobber_(2)"
@@ -10939,10 +11920,18 @@ critters:
     rank_confidence: high
     source_lines: [3366]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Greater_shadow_hound:
     noun: "greater shadow hound"
     slug: "Greater_shadow_hound"
@@ -10952,10 +11941,18 @@ critters:
     rank_confidence: high
     source_lines: [275, 2485]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Greater_sluagh:
     noun: "greater sluagh"
     slug: "Greater_sluagh"
@@ -10966,10 +11963,18 @@ critters:
     rank_notes: "open-high band ('280-?')"
     source_lines: [274, 2484]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Grey_and_tan_mottled_westanuryn:
     noun: "grey and tan mottled westanuryn"
     slug: "Grey_and_tan_mottled_westanuryn"
@@ -10980,10 +11985,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [48]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Grey_clay_archer:
     noun: "grey clay archer"
     slug: "Grey_clay_archer"
@@ -10993,10 +12006,18 @@ critters:
     rank_confidence: high
     source_lines: [185, 2316]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Grey_clay_mage:
     noun: "grey clay mage"
     slug: "Grey_clay_mage"
@@ -11006,10 +12027,18 @@ critters:
     rank_confidence: high
     source_lines: [183, 2309]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Grey_clay_soldier:
     noun: "grey clay soldier"
     slug: "Grey_clay_soldier"
@@ -11019,10 +12048,18 @@ critters:
     rank_confidence: high
     source_lines: [181, 2301]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Gypsy_marauder:
     noun: "gypsy marauder"
     slug: "Gypsy_marauder"
@@ -11032,10 +12069,18 @@ critters:
     rank_confidence: high
     source_lines: [167, 2223]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Heggarangi_boar:
     noun: "heggarangi boar"
     slug: "Heggarangi_boar"
@@ -11045,10 +12090,18 @@ critters:
     rank_confidence: high
     source_lines: [299, 2294, 3556]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Heggarangi_frog:
     noun: "heggarangi frog"
     slug: "Heggarangi_frog"
@@ -11058,10 +12111,18 @@ critters:
     rank_confidence: high
     source_lines: [212, 2034]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Hulking_black_barghest:
     noun: "hulking black barghest"
     slug: "Hulking_black_barghest"
@@ -11071,10 +12132,18 @@ critters:
     rank_confidence: high
     source_lines: [249]
     premium: null
+    skinnable: true
+    skin_yields: ["part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Hurricane_drake:
     noun: "hurricane drake"
     slug: "Hurricane_drake"
@@ -11084,10 +12153,18 @@ critters:
     rank_confidence: high
     source_lines: [3508]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Ice_archon:
     noun: "ice archon"
     slug: "Ice_archon"
@@ -11097,10 +12174,20 @@ critters:
     rank_confidence: high
     source_lines: [1961, 1971]
     premium: null
+    skinnable: false
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: true
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=no but skin yield flags say Yes"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Ichorous_ossein_amalgam:
     noun: "ichorous ossein amalgam"
     slug: "Ichorous_ossein_amalgam"
@@ -11110,10 +12197,18 @@ critters:
     rank_confidence: high
     source_lines: [650]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Icy_blue_ghast:
     noun: "icy blue ghast"
     slug: "Icy_blue_ghast"
@@ -11123,10 +12218,18 @@ critters:
     rank_confidence: high
     source_lines: [2803]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Isundjen_conjurer:
     noun: "isundjen conjurer"
     slug: "Isundjen_conjurer"
@@ -11136,10 +12239,18 @@ critters:
     rank_confidence: high
     source_lines: [206, 2544]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Jackal_(creature):
     noun: "jackal"
     slug: "Jackal_(creature)"
@@ -11149,10 +12260,18 @@ critters:
     rank_confidence: high
     source_lines: [713]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Jeol_moradu:
     noun: "jeol moradu"
     slug: "Jeol_moradu"
@@ -11162,10 +12281,18 @@ critters:
     rank_confidence: high
     source_lines: [3061]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Juvenile_desert_armadillo:
     noun: "juvenile desert armadillo"
     slug: "Juvenile_desert_armadillo"
@@ -11175,10 +12302,18 @@ critters:
     rank_confidence: high
     source_lines: [134, 3467, 3474]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Juvenile_wyvern:
     noun: "juvenile wyvern"
     slug: "Juvenile_wyvern"
@@ -11188,10 +12323,18 @@ critters:
     rank_confidence: high
     source_lines: [1916, 1933]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Kelpie:
     noun: "kelpie"
     slug: "Kelpie"
@@ -11201,10 +12344,18 @@ critters:
     rank_confidence: high
     source_lines: [158, 2076]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Kobold:
     noun: "kobold"
     slug: "Kobold"
@@ -11214,10 +12365,18 @@ critters:
     rank_confidence: high
     source_lines: [1439]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Kra'hei_hatchling:
     noun: "kra'hei hatchling"
     slug: "Kra'hei_hatchling"
@@ -11227,10 +12386,18 @@ critters:
     rank_confidence: high
     source_lines: [319, 3223]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lachmate:
     noun: "lachmate"
     slug: "Lachmate"
@@ -11240,10 +12407,18 @@ critters:
     rank_confidence: high
     source_lines: [3563]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lava_drake:
     noun: "lava drake"
     slug: "Lava_drake"
@@ -11253,10 +12428,18 @@ critters:
     rank_confidence: high
     source_lines: [1344, 1357]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Lengthy_grass_eel:
     noun: "lengthy grass eel"
     slug: "Lengthy_grass_eel"
@@ -11266,10 +12449,18 @@ critters:
     rank_confidence: high
     source_lines: [1447]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Lesser_Dusky-Scaled_Basilisk:
     noun: "lesser dusky-scaled basilisk"
     slug: "Lesser_Dusky-Scaled_Basilisk"
@@ -11279,10 +12470,18 @@ critters:
     rank_confidence: high
     source_lines: [264, 2442]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lesser_North_Wind_banshee:
     noun: "lesser north wind banshee"
     slug: "Lesser_North_Wind_banshee"
@@ -11292,10 +12491,18 @@ critters:
     rank_confidence: high
     source_lines: [3032]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lesser_sluagh_(2):
     noun: "lesser sluagh"
     slug: "Lesser_sluagh_(2)"
@@ -11305,10 +12512,18 @@ critters:
     rank_confidence: high
     source_lines: [240, 2270]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lesser_voltaic_custodian:
     noun: "lesser voltaic custodian"
     slug: "Lesser_voltaic_custodian"
@@ -11318,10 +12533,18 @@ critters:
     rank_confidence: high
     source_lines: [2567]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Lun'Shele_trekhalo:
     noun: "lun'shele trekhalo"
     slug: "Lun'Shele_trekhalo"
@@ -11331,10 +12554,18 @@ critters:
     rank_confidence: high
     source_lines: [3420]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Maelshyvean_cinder_beast:
     noun: "maelshyvean cinder beast"
     slug: "Maelshyvean_cinder_beast"
@@ -11344,10 +12575,18 @@ critters:
     rank_confidence: high
     source_lines: [290, 2575]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Maelshyvean_shadow_beast:
     noun: "maelshyvean shadow beast"
     slug: "Maelshyvean_shadow_beast"
@@ -11357,10 +12596,18 @@ critters:
     rank_confidence: high
     source_lines: [279, 2526]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Malodorous_bucca:
     noun: "malodorous bucca"
     slug: "Malodorous_bucca"
@@ -11370,10 +12617,18 @@ critters:
     rank_confidence: high
     source_lines: [756, 764]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Marbled_angiswaerd:
     noun: "marbled angiswaerd"
     slug: "Marbled_angiswaerd"
@@ -11383,10 +12638,18 @@ critters:
     rank_confidence: high
     source_lines: [305, 2495]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Matron's_tress:
     noun: "matron's tress"
     slug: "Matron's_tress"
@@ -11396,10 +12659,18 @@ critters:
     rank_confidence: high
     source_lines: [2702]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Meadow_ram:
     noun: "meadow ram"
     slug: "Meadow_ram"
@@ -11409,10 +12680,18 @@ critters:
     rank_confidence: high
     source_lines: [225, 2106]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Merrows:
     noun: "merrows"
     slug: "Merrows"
@@ -11422,10 +12701,18 @@ critters:
     rank_confidence: high
     source_lines: [315, 3200]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Misenseor_resuscitant:
     noun: "misenseor resuscitant"
     slug: "Misenseor_resuscitant"
@@ -11435,10 +12722,18 @@ critters:
     rank_confidence: high
     source_lines: [1291]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Miserly_Moneygrubber:
     noun: "miserly moneygrubber"
     slug: "Miserly_Moneygrubber"
@@ -11448,10 +12743,18 @@ critters:
     rank_confidence: high
     source_lines: [194, 2246]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Misshapen_Germish'din:
     noun: "misshapen germish'din"
     slug: "Misshapen_Germish'din"
@@ -11461,10 +12764,18 @@ critters:
     rank_confidence: high
     source_lines: [1162]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Misty_black_zephyr:
     noun: "misty black zephyr"
     slug: "Misty_black_zephyr"
@@ -11474,10 +12785,18 @@ critters:
     rank_confidence: high
     source_lines: [2961]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Moltspun_boggle:
     noun: "moltspun boggle"
     slug: "Moltspun_boggle"
@@ -11487,10 +12806,18 @@ critters:
     rank_confidence: high
     source_lines: [2118]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Morah_creeper:
     noun: "morah creeper"
     slug: "Morah_creeper"
@@ -11500,10 +12827,18 @@ critters:
     rank_confidence: high
     source_lines: [2167]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Morah_vine:
     noun: "morah vine"
     slug: "Morah_vine"
@@ -11513,10 +12848,18 @@ critters:
     rank_confidence: high
     source_lines: [2166]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Moss_mey:
     noun: "moss mey"
     slug: "Moss_mey"
@@ -11526,10 +12869,18 @@ critters:
     rank_confidence: high
     source_lines: [877, 3128]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Mottled_westanuryn:
     noun: "mottled westanuryn"
     slug: "Mottled_westanuryn"
@@ -11540,10 +12891,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [84, 106, 198]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Mountain_Giant:
     noun: "mountain giant"
     slug: "Mountain_Giant"
@@ -11553,10 +12912,18 @@ critters:
     rank_confidence: high
     source_lines: [2876]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Muscular_firecat:
     noun: "muscular firecat"
     slug: "Muscular_firecat"
@@ -11567,10 +12934,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [121]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Musk_Hog:
     noun: "musk hog"
     slug: "Musk_Hog"
@@ -11580,10 +12955,18 @@ critters:
     rank_confidence: high
     source_lines: [406, 598]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Mutant_togball:
     noun: "mutant togball"
     slug: "Mutant_togball"
@@ -11593,10 +12976,18 @@ critters:
     rank_confidence: high
     source_lines: [2730]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Nightreaver_unyn:
     noun: "nightreaver unyn"
     slug: "Nightreaver_unyn"
@@ -11606,10 +12997,18 @@ critters:
     rank_confidence: high
     source_lines: [3257]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Nightweaver_unyun:
     noun: "nightweaver unyun"
     slug: "Nightweaver_unyun"
@@ -11619,10 +13018,18 @@ critters:
     rank_confidence: high
     source_lines: [3153]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Nipoh_oshu:
     noun: "nipoh oshu"
     slug: "Nipoh_oshu"
@@ -11632,10 +13039,18 @@ critters:
     rank_confidence: high
     source_lines: [3320]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Ochre_la'heke:
     noun: "ochre la'heke"
     slug: "Ochre_la'heke"
@@ -11645,10 +13060,18 @@ critters:
     rank_confidence: high
     source_lines: [321, 3271]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Onyx_gargoyle:
     noun: "onyx gargoyle"
     slug: "Onyx_gargoyle"
@@ -11658,10 +13081,18 @@ critters:
     rank_confidence: high
     source_lines: [1121]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Orc_Bandit:
     noun: "orc bandit"
     slug: "Orc_Bandit"
@@ -11671,10 +13102,18 @@ critters:
     rank_confidence: high
     source_lines: [251, 2363]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Orc_clan-chief:
     noun: "orc clan-chief"
     slug: "Orc_clan-chief"
@@ -11684,10 +13123,18 @@ critters:
     rank_confidence: high
     source_lines: [286, 2560]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Orc_raider:
     noun: "orc raider"
     slug: "Orc_raider"
@@ -11704,10 +13151,18 @@ critters:
         reason: "wider/disagreeing band discarded in favor of narrower reconciled band (A2-style)"
     source_lines: [281, 2535, 2551]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Orc_reiver:
     noun: "orc reiver"
     slug: "Orc_reiver"
@@ -11717,10 +13172,18 @@ critters:
     rank_confidence: high
     source_lines: [267, 2453]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Orc_scout:
     noun: "orc scout"
     slug: "Orc_scout"
@@ -11731,10 +13194,18 @@ critters:
     rank_notes: "trailing-'?' band ('160-220?')"
     source_lines: [243, 2324]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Origami_Creature:
     noun: "origami creature"
     slug: "Origami_Creature"
@@ -11744,10 +13215,18 @@ critters:
     rank_confidence: high
     source_lines: [499]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Pale_Grey_Death_Spirit:
     noun: "pale grey death spirit"
     slug: "Pale_Grey_Death_Spirit"
@@ -11757,10 +13236,18 @@ critters:
     rank_confidence: high
     source_lines: [1049, 1063, 1070]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Pale_grey_death_squirrel:
     noun: "pale grey death squirrel"
     slug: "Pale_grey_death_squirrel"
@@ -11770,10 +13257,18 @@ critters:
     rank_confidence: high
     source_lines: [451]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Peccary:
     noun: "peccary"
     slug: "Peccary"
@@ -11783,10 +13278,18 @@ critters:
     rank_confidence: high
     source_lines: [1660, 1673, 3299]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Piranha:
     noun: "piranha"
     slug: "Piranha"
@@ -11796,10 +13299,18 @@ critters:
     rank_confidence: high
     source_lines: [3577]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Piruati_serpent:
     noun: "piruati serpent"
     slug: "Piruati_serpent"
@@ -11816,10 +13327,18 @@ critters:
         reason: "wider/disagreeing band discarded in favor of narrower reconciled band (A2-style)"
     source_lines: [237, 2233, 2287]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Poloh'izh:
     noun: "poloh'izh"
     slug: "Poloh'izh"
@@ -11829,10 +13348,18 @@ critters:
     rank_confidence: high
     source_lines: [128]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Pugnacious_pinchfist:
     noun: "pugnacious pinchfist"
     slug: "Pugnacious_pinchfist"
@@ -11843,10 +13370,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [2263]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Putrid_tree_snake:
     noun: "putrid tree snake"
     slug: "Putrid_tree_snake"
@@ -11856,10 +13391,18 @@ critters:
     rank_confidence: high
     source_lines: [668]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Quartz_gargoyle:
     noun: "quartz gargoyle"
     slug: "Quartz_gargoyle"
@@ -11869,10 +13412,18 @@ critters:
     rank_confidence: high
     source_lines: [3677]
     premium: true
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Ragged_wind_hag:
     noun: "ragged wind hag"
     slug: "Ragged_wind_hag"
@@ -11883,10 +13434,18 @@ critters:
     rank_notes: "trailing-'?' band ('700-1000?')"
     source_lines: [2986]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: null
+    cursed: null
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Rat:
     noun: "rat"
     slug: "Rat"
@@ -11896,10 +13455,18 @@ critters:
     rank_confidence: high
     source_lines: [341, 350, 358, 365, 3640]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Red-bristled_gremlin:
     noun: "red-bristled gremlin"
     slug: "Red-bristled_gremlin"
@@ -11909,10 +13476,18 @@ critters:
     rank_confidence: high
     source_lines: [1754]
     premium: true
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Red-Gold_scaled_atik'et_(2):
     noun: "red-gold scaled atik'et"
     slug: "Red-Gold_scaled_atik'et_(2)"
@@ -11922,10 +13497,18 @@ critters:
     rank_confidence: high
     source_lines: [105]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Red_brocket_deer:
     noun: "red brocket deer"
     slug: "Red_brocket_deer"
@@ -11935,10 +13518,18 @@ critters:
     rank_confidence: high
     source_lines: [55, 170]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Retan_dolomar:
     noun: "retan dolomar"
     slug: "Retan_dolomar"
@@ -11948,10 +13539,18 @@ critters:
     rank_confidence: high
     source_lines: [328, 3356, 3584]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Revenant_conscript:
     noun: "revenant conscript"
     slug: "Revenant_conscript"
@@ -11961,10 +13560,18 @@ critters:
     rank_confidence: high
     source_lines: [705]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Revenant_zombie:
     noun: "revenant zombie"
     slug: "Revenant_zombie"
@@ -11974,10 +13581,18 @@ critters:
     rank_confidence: high
     source_lines: [741]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   River_boa:
     noun: "river boa"
     slug: "River_boa"
@@ -11987,10 +13602,18 @@ critters:
     rank_confidence: high
     source_lines: [303, 2449, 3591]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   River_caiman:
     noun: "river caiman"
     slug: "River_caiman"
@@ -12000,10 +13623,18 @@ critters:
     rank_confidence: high
     source_lines: [293, 2192]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   River_Sprite:
     noun: "river sprite"
     slug: "River_Sprite"
@@ -12013,10 +13644,18 @@ critters:
     rank_confidence: high
     source_lines: [959]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Robed_Dragon_Priest(ess)_(1):
     noun: "robed dragon priest(ess)"
     slug: "Robed_Dragon_Priest(ess)_(1)"
@@ -12026,10 +13665,18 @@ critters:
     rank_confidence: high
     source_lines: [1784]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Robed_Dragon_Priest(ess)_(2):
     noun: "robed dragon priest(ess)"
     slug: "Robed_Dragon_Priest(ess)_(2)"
@@ -12039,10 +13686,18 @@ critters:
     rank_confidence: high
     source_lines: [1809]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Rock_guardian:
     noun: "rock guardian"
     slug: "Rock_guardian"
@@ -12052,10 +13707,18 @@ critters:
     rank_confidence: high
     source_lines: [1079, 1088]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Rock_Troll_(1):
     noun: "rock troll"
     slug: "Rock_Troll_(1)"
@@ -12065,10 +13728,18 @@ critters:
     rank_confidence: high
     source_lines: [799]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Rock_troll_(2):
     noun: "rock troll"
     slug: "Rock_troll_(2)"
@@ -12078,10 +13749,18 @@ critters:
     rank_confidence: high
     source_lines: [1485]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   S'lai_Scout:
     noun: "s'lai scout"
     slug: "S'lai_Scout"
@@ -12091,10 +13770,18 @@ critters:
     rank_confidence: high
     source_lines: [588]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   S'sugi_malchata:
     noun: "s'sugi malchata"
     slug: "S'sugi_malchata"
@@ -12104,10 +13791,18 @@ critters:
     rank_confidence: high
     source_lines: [1864]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sailfin_lizard:
     noun: "sailfin lizard"
     slug: "Sailfin_lizard"
@@ -12117,10 +13812,18 @@ critters:
     rank_confidence: high
     source_lines: [3599]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Salt_crab:
     noun: "salt crab"
     slug: "Salt_crab"
@@ -12130,10 +13833,18 @@ critters:
     rank_confidence: high
     source_lines: [3645]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sand_spider:
     noun: "sand spider"
     slug: "Sand_spider"
@@ -12143,10 +13854,18 @@ critters:
     rank_confidence: high
     source_lines: [192, 2202]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sand_sprite:
     noun: "sand sprite"
     slug: "Sand_sprite"
@@ -12156,10 +13875,18 @@ critters:
     rank_confidence: high
     source_lines: [308, 3102]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Scaly_seordmaor:
     noun: "scaly seordmaor"
     slug: "Scaly_seordmaor"
@@ -12169,10 +13896,18 @@ critters:
     rank_confidence: high
     source_lines: [3620]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Scarlet_crayfish:
     noun: "scarlet crayfish"
     slug: "Scarlet_crayfish"
@@ -12182,10 +13917,18 @@ critters:
     rank_confidence: high
     source_lines: [216, 2047]
     premium: null
+    skinnable: true
+    skin_yields: null
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Scavenger_giant:
     noun: "scavenger giant"
     slug: "Scavenger_giant"
@@ -12195,10 +13938,18 @@ critters:
     rank_confidence: high
     source_lines: [1406, 1420]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Scavenger_goblin:
     noun: "scavenger goblin"
     slug: "Scavenger_goblin"
@@ -12208,10 +13959,18 @@ critters:
     rank_confidence: high
     source_lines: [465]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Scavenger_Troll:
     noun: "scavenger troll"
     slug: "Scavenger_Troll"
@@ -12221,10 +13980,18 @@ critters:
     rank_confidence: high
     source_lines: [1001]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Scout_ogre:
     noun: "scout ogre"
     slug: "Scout_ogre"
@@ -12234,10 +14001,18 @@ critters:
     rank_confidence: high
     source_lines: [950]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Seordhevor_kartais:
     noun: "seordhevor kartais"
     slug: "Seordhevor_kartais"
@@ -12247,10 +14022,18 @@ critters:
     rank_confidence: high
     source_lines: [77]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Shadewing_harpy:
     noun: "shadewing harpy"
     slug: "Shadewing_harpy"
@@ -12260,10 +14043,18 @@ critters:
     rank_confidence: high
     source_lines: [1299]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Shadowfrost_moth:
     noun: "shadowfrost moth"
     slug: "Shadowfrost_moth"
@@ -12273,10 +14064,20 @@ critters:
     rank_confidence: high
     source_lines: [3089]
     premium: true
+    skinnable: true
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Shifty-eyed_skinflint:
     noun: "shifty-eyed skinflint"
     slug: "Shifty-eyed_skinflint"
@@ -12286,10 +14087,18 @@ critters:
     rank_confidence: high
     source_lines: [196, 2262]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sickly_blightwater_nyad:
     noun: "sickly blightwater nyad"
     slug: "Sickly_blightwater_nyad"
@@ -12299,10 +14108,18 @@ critters:
     rank_confidence: high
     source_lines: [2740]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Silver-backed_bear:
     noun: "silver-backed bear"
     slug: "Silver-backed_bear"
@@ -12312,10 +14129,18 @@ critters:
     rank_confidence: high
     source_lines: [870]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Silver_leucro:
     noun: "silver leucro"
     slug: "Silver_leucro"
@@ -12325,10 +14150,18 @@ critters:
     rank_confidence: high
     source_lines: [311, 3135]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Silverfish:
     noun: "silverfish"
     slug: "Silverfish"
@@ -12338,10 +14171,18 @@ critters:
     rank_confidence: high
     source_lines: [420]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Sinuous_ice_adder:
     noun: "sinuous ice adder"
     slug: "Sinuous_ice_adder"
@@ -12351,10 +14192,18 @@ critters:
     rank_confidence: high
     source_lines: [2795]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Skeletal_Kobold_Headhunter:
     noun: "skeletal kobold headhunter"
     slug: "Skeletal_Kobold_Headhunter"
@@ -12364,10 +14213,18 @@ critters:
     rank_confidence: high
     source_lines: [1496]
     premium: null
+    skinnable: true
+    skin_yields: ["part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Skeletal_kobold_savage:
     noun: "skeletal kobold savage"
     slug: "Skeletal_kobold_savage"
@@ -12377,10 +14234,18 @@ critters:
     rank_confidence: high
     source_lines: [1495]
     premium: null
+    skinnable: true
+    skin_yields: ["part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sky_giant:
     noun: "sky giant"
     slug: "Sky_giant"
@@ -12390,10 +14255,18 @@ critters:
     rank_confidence: high
     source_lines: [177, 2606]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sleazy_Lout:
     noun: "sleazy lout"
     slug: "Sleazy_Lout"
@@ -12403,10 +14276,18 @@ critters:
     rank_confidence: high
     source_lines: [372]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Sleek_hele'la:
     noun: "sleek hele'la"
     slug: "Sleek_hele'la"
@@ -12416,10 +14297,18 @@ critters:
     rank_confidence: high
     source_lines: [3570]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Small_grendel:
     noun: "small grendel"
     slug: "Small_grendel"
@@ -12429,10 +14318,18 @@ critters:
     rank_confidence: high
     source_lines: [608]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Small_Peccary:
     noun: "small peccary"
     slug: "Small_Peccary"
@@ -12442,10 +14339,18 @@ critters:
     rank_confidence: high
     source_lines: [187, 2336]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Small_tree_sloth:
     noun: "small tree sloth"
     slug: "Small_tree_sloth"
@@ -12455,10 +14360,18 @@ critters:
     rank_confidence: high
     source_lines: [1581]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Snaer_hafwa:
     noun: "snaer hafwa"
     slug: "Snaer_hafwa"
@@ -12468,10 +14381,18 @@ critters:
     rank_confidence: high
     source_lines: [1190, 3405]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Snippet:
     noun: "snippet"
     slug: "Snippet"
@@ -12481,10 +14402,18 @@ critters:
     rank_confidence: high
     source_lines: [1456]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Snow_goblin_(1):
     noun: "snow goblin"
     slug: "Snow_goblin_(1)"
@@ -12494,10 +14423,18 @@ critters:
     rank_confidence: high
     source_lines: [3173]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Snowbeast:
     noun: "snowbeast"
     slug: "Snowbeast"
@@ -12507,10 +14444,18 @@ critters:
     rank_confidence: high
     source_lines: [838, 1465, 1477]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Spectral_pirate:
     noun: "spectral pirate"
     slug: "Spectral_pirate"
@@ -12520,10 +14465,18 @@ critters:
     rank_confidence: high
     source_lines: [326, 3341]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Spider_crab:
     noun: "spider crab"
     slug: "Spider_crab"
@@ -12533,10 +14486,18 @@ critters:
     rank_confidence: high
     source_lines: [3606]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Spiny_bloodfish_(1):
     noun: "spiny bloodfish"
     slug: "Spiny_bloodfish_(1)"
@@ -12547,10 +14508,18 @@ critters:
     rank_notes: "open-high band ('360-?')"
     source_lines: [3412]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Spotted_bobcat:
     noun: "spotted bobcat"
     slug: "Spotted_bobcat"
@@ -12560,10 +14529,18 @@ critters:
     rank_confidence: high
     source_lines: [3652]
     premium: true
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Spotted_kashika_serpent:
     noun: "spotted kashika serpent"
     slug: "Spotted_kashika_serpent"
@@ -12573,10 +14550,18 @@ critters:
     rank_confidence: high
     source_lines: [3670]
     premium: true
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Storm_bull:
     noun: "storm bull"
     slug: "Storm_bull"
@@ -12586,10 +14571,18 @@ critters:
     rank_confidence: high
     source_lines: [1273]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Storm_bull_(2):
     noun: "storm bull"
     slug: "Storm_bull_(2)"
@@ -12599,10 +14592,18 @@ critters:
     rank_confidence: high
     source_lines: [1873]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Storm_bull_(3):
     noun: "storm bull"
     slug: "Storm_bull_(3)"
@@ -12612,10 +14613,18 @@ critters:
     rank_confidence: high
     source_lines: [1885]
     premium: true
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Striped_badger:
     noun: "striped badger"
     slug: "Striped_badger"
@@ -12625,10 +14634,18 @@ critters:
     rank_confidence: high
     source_lines: [484, 492]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Stumpy_blight_ogre:
     noun: "stumpy blight ogre"
     slug: "Stumpy_blight_ogre"
@@ -12638,10 +14655,18 @@ critters:
     rank_confidence: high
     source_lines: [2782]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Supple_firecat:
     noun: "supple firecat"
     slug: "Supple_firecat"
@@ -12651,10 +14676,18 @@ critters:
     rank_confidence: high
     source_lines: [120]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Suw_bizar:
     noun: "suw bizar"
     slug: "Suw_bizar"
@@ -12664,10 +14697,18 @@ critters:
     rank_confidence: high
     source_lines: [3659]
     premium: true
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Swamp_troll_(1):
     noun: "swamp troll"
     slug: "Swamp_troll_(1)"
@@ -12677,10 +14718,18 @@ critters:
     rank_confidence: high
     source_lines: [241, 2271]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Swamp_Troll_(2):
     noun: "swamp troll"
     slug: "Swamp_Troll_(2)"
@@ -12690,10 +14739,18 @@ critters:
     rank_confidence: high
     source_lines: [188, 2337]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sylph_(1):
     noun: "sylph"
     slug: "Sylph_(1)"
@@ -12703,10 +14760,18 @@ critters:
     rank_confidence: high
     source_lines: [1551]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Sylph_(2):
     noun: "sylph"
     slug: "Sylph_(2)"
@@ -12716,10 +14781,18 @@ critters:
     rank_confidence: high
     source_lines: [1589]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Telga_moradu:
     noun: "telga moradu"
     slug: "Telga_moradu"
@@ -12729,10 +14802,18 @@ critters:
     rank_confidence: high
     source_lines: [3612]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Telga_orek:
     noun: "telga orek"
     slug: "Telga_orek"
@@ -12742,10 +14823,18 @@ critters:
     rank_confidence: high
     source_lines: [1941]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Thornkin:
     noun: "thornkin"
     slug: "Thornkin"
@@ -12755,10 +14844,18 @@ critters:
     rank_confidence: high
     source_lines: [2680]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Thug_(creature):
     noun: "thug"
     slug: "Thug_(creature)"
@@ -12769,10 +14866,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [903, 914, 925]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Tortured_soul_(1):
     noun: "tortured soul"
     slug: "Tortured_soul_(1)"
@@ -12782,10 +14887,18 @@ critters:
     rank_confidence: high
     source_lines: [2065]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: false
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Tree_Snake:
     noun: "tree snake"
     slug: "Tree_Snake"
@@ -12795,10 +14908,18 @@ critters:
     rank_confidence: high
     source_lines: [2504]
     premium: null
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Treehopper_Toad:
     noun: "treehopper toad"
     slug: "Treehopper_Toad"
@@ -12808,10 +14929,18 @@ critters:
     rank_confidence: high
     source_lines: [1141]
     premium: true
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Trollkin:
     noun: "trollkin"
     slug: "Trollkin"
@@ -12821,10 +14950,18 @@ critters:
     rank_confidence: high
     source_lines: [575, 581]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Troublesome_tightwad:
     noun: "troublesome tightwad"
     slug: "Troublesome_tightwad"
@@ -12835,10 +14972,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [2247]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Twisted_Dryad:
     noun: "twisted dryad"
     slug: "Twisted_Dryad"
@@ -12848,10 +14993,18 @@ critters:
     rank_confidence: high
     source_lines: [1024, 1035]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Umbral_moth:
     noun: "umbral moth"
     slug: "Umbral_moth"
@@ -12861,10 +15014,20 @@ critters:
     rank_confidence: high
     source_lines: [1366, 3071]
     premium: null
+    skinnable: true
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Vela'tohr_bloodvine:
     noun: "vela'tohr bloodvine"
     slug: "Vela'tohr_bloodvine"
@@ -12874,10 +15037,18 @@ critters:
     rank_confidence: high
     source_lines: [2716]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Velakan_slaver:
     noun: "velakan slaver"
     slug: "Velakan_slaver"
@@ -12887,10 +15058,18 @@ critters:
     rank_confidence: high
     source_lines: [98, 200]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Vicious_Dragon_Priest_intercessor:
     noun: "vicious dragon priest intercessor"
     slug: "Vicious_Dragon_Priest_intercessor"
@@ -12900,10 +15079,18 @@ critters:
     rank_confidence: high
     source_lines: [3053]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Vicious_Warcat:
     noun: "vicious warcat"
     slug: "Vicious_Warcat"
@@ -12914,10 +15101,18 @@ critters:
     rank_notes: "no band text on this row"
     source_lines: [244, 2325]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Vile_plague_wraith:
     noun: "vile plague wraith"
     slug: "Vile_plague_wraith"
@@ -12927,10 +15122,18 @@ critters:
     rank_confidence: high
     source_lines: [1838]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Void_black_umbral_moth:
     noun: "void black umbral moth"
     slug: "Void_black_umbral_moth"
@@ -12940,10 +15143,18 @@ critters:
     rank_confidence: high
     source_lines: [1396, 3080]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Warklin_mauler:
     noun: "warklin mauler"
     slug: "Warklin_mauler"
@@ -12953,10 +15164,18 @@ critters:
     rank_confidence: high
     source_lines: [1233]
     premium: false
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Water_sprite:
     noun: "water sprite"
     slug: "Water_sprite"
@@ -12966,10 +15185,18 @@ critters:
     rank_confidence: high
     source_lines: [557]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Wild_boar:
     noun: "wild boar"
     slug: "Wild_boar"
@@ -12979,10 +15206,18 @@ critters:
     rank_confidence: high
     source_lines: [157, 229, 599, 2078, 2124]
     premium: false
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Wildland_goblin:
     noun: "wildland goblin"
     slug: "Wildland_goblin"
@@ -12992,10 +15227,18 @@ critters:
     rank_confidence: high
     source_lines: [219, 2054]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Wind_Hound:
     noun: "wind hound"
     slug: "Wind_Hound"
@@ -13005,10 +15248,18 @@ critters:
     rank_confidence: high
     source_lines: [730]
     premium: null
+    skinnable: false
+    skin_yields: null
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Windbag_(1):
     noun: "windbag"
     slug: "Windbag_(1)"
@@ -13018,10 +15269,18 @@ critters:
     rank_confidence: high
     source_lines: [1588]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Windbag_(2):
     noun: "windbag"
     slug: "Windbag_(2)"
@@ -13031,10 +15290,18 @@ critters:
     rank_confidence: high
     source_lines: [1628]
     premium: true
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: true
+    undead: null
+    cursed: null
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Wir_dinego:
     noun: "wir dinego"
     slug: "Wir_dinego"
@@ -13049,10 +15316,18 @@ critters:
         reason: "user ruling (2026-08-14): this occurrence is WRONG; Wir_dinego is 360-450 by explicit ruling, this entry is discarded outright, not intersected"
     source_lines: [1202, 3386]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Wood_Troll_(1):
     noun: "wood troll"
     slug: "Wood_Troll_(1)"
@@ -13062,10 +15337,18 @@ critters:
     rank_confidence: high
     source_lines: [160, 620, 2075]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Writhing_maiden's_tress:
     noun: "writhing maiden's tress"
     slug: "Writhing_maiden's_tress"
@@ -13075,10 +15358,18 @@ critters:
     rank_confidence: high
     source_lines: [2692]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Xala'shar_archer:
     noun: "xala'shar archer"
     slug: "Xala'shar_archer"
@@ -13088,10 +15379,18 @@ critters:
     rank_confidence: high
     source_lines: [1336]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_archimage:
     noun: "xala'shar archimage"
     slug: "Xala'shar_archimage"
@@ -13101,10 +15400,18 @@ critters:
     rank_confidence: high
     source_lines: [1328]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_conjurer:
     noun: "xala'shar conjurer"
     slug: "Xala'shar_conjurer"
@@ -13114,10 +15421,20 @@ critters:
     rank_confidence: high
     source_lines: [1317]
     premium: false
+    skinnable: true
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
+    flags_review: true
+    flags_review_reason: "Skinnable=yes but hasskin, haspart and hasbone are all No"
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_magus:
     noun: "xala'shar magus"
     slug: "Xala'shar_magus"
@@ -13127,10 +15444,18 @@ critters:
     rank_confidence: high
     source_lines: [1306]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_overseer:
     noun: "xala'shar overseer"
     slug: "Xala'shar_overseer"
@@ -13140,10 +15465,18 @@ critters:
     rank_confidence: high
     source_lines: [1338]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_shredder:
     noun: "xala'shar shredder"
     slug: "Xala'shar_shredder"
@@ -13153,10 +15486,18 @@ critters:
     rank_confidence: high
     source_lines: [1337]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_slayer:
     noun: "xala'shar slayer"
     slug: "Xala'shar_slayer"
@@ -13166,10 +15507,18 @@ critters:
     rank_confidence: high
     source_lines: [1327]
     premium: false
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_thrall:
     noun: "xala'shar thrall"
     slug: "Xala'shar_thrall"
@@ -13179,10 +15528,18 @@ critters:
     rank_confidence: high
     source_lines: [1307]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_vanquisher:
     noun: "xala'shar vanquisher"
     slug: "Xala'shar_vanquisher"
@@ -13192,10 +15549,18 @@ critters:
     rank_confidence: high
     source_lines: [1316]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Xala'shar_vindicator:
     noun: "xala'shar vindicator"
     slug: "Xala'shar_vindicator"
@@ -13205,10 +15570,18 @@ critters:
     rank_confidence: high
     source_lines: [1329]
     premium: true
+    skinnable: false
+    skin_yields: null
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Yellow_bristled_gremlin:
     noun: "yellow bristled gremlin"
     slug: "Yellow_bristled_gremlin"
@@ -13218,10 +15591,18 @@ critters:
     rank_confidence: high
     source_lines: [3691]
     premium: true
+    skinnable: true
+    skin_yields: ["part"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: true
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Young_blue-dappled_prereni:
     noun: "young blue-dappled prereni"
     slug: "Young_blue-dappled_prereni"
@@ -13242,10 +15623,18 @@ critters:
         reason: "wider/disagreeing band discarded in favor of narrower reconciled band (A2-style)"
     source_lines: [1569, 1576]
     premium: null
+    skinnable: null
+    skin_yields: null
+    drops_boxes: null
+    construct: null
+    undead: null
+    cursed: null
+    corporeal: null
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: unresolved
   Young_cave_troll:
     noun: "young cave troll"
     slug: "Young_cave_troll"
@@ -13255,10 +15644,18 @@ critters:
     rank_confidence: high
     source_lines: [2711]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Young_forest_gryphon:
     noun: "young forest gryphon"
     slug: "Young_forest_gryphon"
@@ -13268,10 +15665,18 @@ critters:
     rank_confidence: high
     source_lines: [1714]
     premium: null
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Young_Ogre:
     noun: "young ogre"
     slug: "Young_Ogre"
@@ -13281,10 +15686,18 @@ critters:
     rank_confidence: high
     source_lines: [234, 855, 864, 2212]
     premium: false
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Young_red_brocket_deer:
     noun: "young red brocket deer"
     slug: "Young_red_brocket_deer"
@@ -13294,10 +15707,18 @@ critters:
     rank_confidence: high
     source_lines: [40, 164]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "bone"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Young_wyvern:
     noun: "young wyvern"
     slug: "Young_wyvern"
@@ -13307,10 +15728,18 @@ critters:
     rank_confidence: high
     source_lines: [1893, 1907]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Yvhh_la'tami:
     noun: "yvhh la'tami"
     slug: "Yvhh_la'tami"
@@ -13320,10 +15749,18 @@ critters:
     rank_confidence: high
     source_lines: [3241]
     premium: false
+    skinnable: true
+    skin_yields: ["skin"]
+    drops_boxes: false
+    construct: false
+    undead: false
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: elanthipedia_critter_infobox
+      flags: elanthipedia_critter_infobox
   Zombie_goblin:
     noun: "zombie goblin"
     slug: "Zombie_goblin"
@@ -13333,10 +15770,18 @@ critters:
     rank_confidence: high
     source_lines: [214, 2040]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_head-splitter:
     noun: "zombie head-splitter"
     slug: "Zombie_head-splitter"
@@ -13346,10 +15791,18 @@ critters:
     rank_confidence: high
     source_lines: [2973]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_Kobold_Headhunter:
     noun: "zombie kobold headhunter"
     slug: "Zombie_Kobold_Headhunter"
@@ -13359,10 +15812,18 @@ critters:
     rank_confidence: high
     source_lines: [1498]
     premium: null
+    skinnable: true
+    skin_yields: ["part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_Kobold_Savage:
     noun: "zombie kobold savage"
     slug: "Zombie_Kobold_Savage"
@@ -13372,10 +15833,18 @@ critters:
     rank_confidence: high
     source_lines: [1497]
     premium: null
+    skinnable: true
+    skin_yields: ["part", "bone"]
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_mauler:
     noun: "zombie mauler"
     slug: "Zombie_mauler"
@@ -13385,10 +15854,18 @@ critters:
     rank_confidence: high
     source_lines: [2943]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_nomad:
     noun: "zombie nomad"
     slug: "Zombie_nomad"
@@ -13398,10 +15875,18 @@ critters:
     rank_confidence: high
     source_lines: [202, 2466]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_red_leucro:
     noun: "zombie red leucro"
     slug: "Zombie_red_leucro"
@@ -13411,10 +15896,18 @@ critters:
     rank_confidence: high
     source_lines: [1560]
     premium: null
+    skinnable: true
+    skin_yields: ["skin", "part"]
+    drops_boxes: false
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
   Zombie_stomper:
     noun: "zombie stomper"
     slug: "Zombie_stomper"
@@ -13424,7 +15917,15 @@ critters:
     rank_confidence: high
     source_lines: [2900]
     premium: null
+    skinnable: false
+    skin_yields: []
+    drops_boxes: true
+    construct: false
+    undead: true
+    cursed: false
+    corporeal: true
     provenance:
       rank: comment
       slug: comment_url_slug
       premium: unresolved
+      flags: elanthipedia_critter_infobox
