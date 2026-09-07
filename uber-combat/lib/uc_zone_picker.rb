@@ -82,8 +82,20 @@ module UberCombat
     # character stands, or nil when the zone is unreachable. ZoneDistance.live
     # builds it in game. Nil means no distance is known, and the picker then
     # chooses among candidates by band width alone.
+    # ferries: a callable, zone key -> Array<UberCombat::Ferry::Crossing> for
+    # the route this character would actually walk to that zone, or nil to
+    # turn the check off entirely. Injected rather than built here for the
+    # same reason Probe.partition takes rooms_for_tag as a callable: the
+    # picker is pure, it must not learn to talk to Map, and every existing
+    # caller and test that passes nothing keeps its old behaviour exactly.
+    #
+    # DETECTION ONLY (user, 2026-09-07). A ferry never makes a zone
+    # inadmissible and never breaks a tie. It is reported through
+    # Itinerary#ferry_crossings and nothing else reads it. Excluding on it
+    # would be the wrong call twice over: the trip still works, and the same
+    # crossing is free for a character who can swim it.
     def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil,
-                   trainable_skills: nil, creature_flags: nil, distance: nil)
+                   trainable_skills: nil, creature_flags: nil, distance: nil, ferries: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
@@ -92,6 +104,7 @@ module UberCombat
       @trainable_skills = trainable_skills
       @creature_flags = creature_flags || []
       @distance = distance
+      @ferries = ferries
     end
 
     # nil means no restriction, so every existing caller and every test that
@@ -182,7 +195,13 @@ module UberCombat
     # knowing whether its zone is premium-only. Those are admitted on purpose,
     # so the only thing standing between a fail-open admission and a silent
     # travel failure is this list being carried out to the caller.
-    Itinerary = Struct.new(:legs, :unplaced, :unresolved_premium, keyword_init: true)
+    # ferry_crossings is the third list on the same principle as
+    # unresolved_premium: something true about a leg the picker chose that the
+    # picker deliberately did not act on. Empty when no route crosses water,
+    # and empty when no `ferries:` callable was supplied at all -- a caller
+    # that wants the two distinguished should ask whether it passed one.
+    Itinerary = Struct.new(:legs, :unplaced, :unresolved_premium, :ferry_crossings,
+                           keyword_init: true)
 
     # Cluster the skills into legs by bounded leg width.
     #
@@ -267,7 +286,30 @@ module UberCombat
 
       presented = legs.map { |leg| present(leg) }
       Itinerary.new(legs: presented, unplaced: unplaced.compact,
-                    unresolved_premium: unresolved_premium_records(presented))
+                    unresolved_premium: unresolved_premium_records(presented),
+                    ferry_crossings: ferry_records(presented))
+    end
+
+    # Legs whose zone this character reaches by boat.
+    #
+    # Reported per LEG, not per zone, because the cost is paid per trip: a leg
+    # is a stint, and a stint pays the crossing on the way out and again on
+    # the way home. Two legs sharing one ferry are two waits, and collapsing
+    # them by zone would hide that.
+    #
+    # A nil callable means the check was never wired up, which is not the same
+    # as no ferries, and neither is an unreachable zone -- both come back as
+    # an empty list rather than as an invented answer.
+    def ferry_records(legs)
+      return [] if @ferries.nil?
+
+      legs.filter_map do |leg|
+        crossings = @ferries.call(leg[:zone_key])
+        next if crossings.nil? || crossings.empty?
+
+        { zone_key: leg[:zone_key], reason: :ferry_route,
+          detail: { skills: leg[:skills], crossings: crossings.map(&:to_s) } }
+      end
     end
 
     # The fail-open half of the premium rule, made visible.

@@ -28,6 +28,7 @@ calls and the printing, and they own no decision.
 | `lib/uc_leg_overlay.rb` | Maps a leg plus live character state to a complete profile overlay hash, and reports its gaps |
 | `lib/uc_leg_settings.rb` | The one place Lich's `uc_settings` shape is read: weapons, spells, premium, `in_province_only`, `max_skills_per_leg` |
 | `lib/uc_leg_writer.rb` | Writes the overlay atomically, refuses any gap, refuses to overwrite a foreign file |
+| `lib/uc_ferry.rb` | Ferry detection: reads the bescort crossings off the route this character would actually walk |
 | `lib/uc_probe.rb` | The reachability probe's decision core: partition, deadline, verdict, record, and `Probe::Session` |
 | `lib/uc_director.rb` | The D1 hunt spine: pick a leg, write its overlay, run one bounded stint, measure it, advance or repeat |
 | `uc-zones.lic` | Read-only diagnostic. Prints the itinerary and the candidate zones, nearest first |
@@ -55,6 +56,30 @@ Bare `;uc-leg`, `;uc-probe` and `;uc-director` are all read-only in the same
 way. That is a rule, not a coincidence: the mode a person reaches for by habit
 must never change anything.
 
+### Ferries
+
+`uc-zones` and `uc-probe` both name the crossings on the route to a zone.
+A `FERRY` column on a candidate row, a `ferry=` line under an itinerary leg,
+and a `crossings:` key in a probe record all mean the same thing: getting there
+puts the character on a boat and the trip pays a wait for it, out and back.
+
+This is DETECTION ONLY. Nothing excludes a zone, reorders a candidate or
+changes a verdict on it. It exists because `DIST` is Dijkstra seconds and a
+Dijkstra second is not a wall-clock second on a leg that waits for a ferry to
+dock, so the nearest zone on the list is not always the quickest trip.
+
+It is answered PER CHARACTER, and that is the whole difficulty. The route is
+taken from a live `Map.findpath`, because a map edge's `timeto` StringProc
+closes that edge for a character who lacks the mount or the Athletics it asks
+for -- a swimmer and a ferry passenger cross the Segoltha on genuinely
+different edges, and a reimplemented search gets this wrong. `bescort` then
+makes a second decision of its own that the map does not model at all:
+`faldesu` swims at Athletics modrank 140 and takes the Riverhaven ferry below
+it, over one single map edge. `lib/uc_ferry.rb` resolves that half.
+
+`bescort segoltha` is NOT a ferry. It swims or flies, and the Crossing ferry is
+the separate `ferry` escort.
+
 `;uc-director` HAS NEVER BEEN RUN IN GAME, in any mode. The whole director is
 argued from source and covered by unit tests, and nothing about it has been
 observed under a real hunt.
@@ -72,7 +97,7 @@ bundle install
 rspec
 ```
 
-654 examples, about 6 seconds, no game needed.
+694 examples, about 6 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -83,7 +108,7 @@ cd custom-scripts
 BUNDLE_GEMFILE=uber-combat/Gemfile bundle exec rubocop uber-combat
 ```
 
-36 files, no offenses. The custom cop rejects non-ASCII source. Write no
+38 files, no offenses. The custom cop rejects non-ASCII source. Write no
 arrows, no em dashes and no smart quotes in `.rb` files.
 
 The suite runs in one process and needs no game runtime. `spec/support/` holds

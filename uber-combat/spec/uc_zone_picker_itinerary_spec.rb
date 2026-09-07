@@ -455,4 +455,64 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
       expect(itinerary.unresolved_premium).to be_empty
     end
   end
+
+  # DETECTION ONLY. Every example here checks that the ferry is REPORTED and
+  # that the same leg is still chosen -- a crossing must never make a zone
+  # inadmissible or break a tie.
+  describe "#build_itinerary, ferry_crossings" do
+    def crossing(escort, *mode)
+      UberCombat::Ferry::Crossing.new(from: 957, to: 1904, escort: escort, mode: mode,
+                                      kind: :vehicle)
+    end
+
+    def picker_with_ferries(zones, ferries, skills = {})
+      character = UberCombat::Character.new(
+        FakeSkills.new({ "Evasion" => 200, "Shield Usage" => 200, "Parry Ability" => 200 }.merge(skills))
+      )
+      described_class.new(character, FakeZoneTable.new(zones), false,
+                          ferries: ->(zone_key) { ferries[zone_key] })
+    end
+
+    it "names the crossing on a leg whose zone is reached by boat" do
+      itinerary = picker_with_ferries([open_zone], { "anywhere" => [crossing("ferry", "leth")] },
+                                      "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.ferry_crossings).to contain_exactly(
+        hash_including(zone_key: "anywhere", reason: :ferry_route,
+                       detail: { skills: ["Small Edged"], crossings: ["ferry leth"] })
+      )
+    end
+
+    it "still selects the zone, because a ferry excludes nothing" do
+      itinerary = picker_with_ferries([open_zone], { "anywhere" => [crossing("ferry", "leth")] },
+                                      "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["anywhere"])
+      expect(itinerary.unplaced).to be_empty
+    end
+
+    it "reports nothing for a zone the character walks to" do
+      itinerary = picker_with_ferries([open_zone], { "anywhere" => [] },
+                                      "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.ferry_crossings).to be_empty
+    end
+
+    # The default for every caller that has not been taught the seam, and for
+    # every test above this block. It must not raise and must not invent an
+    # answer.
+    it "reports nothing at all when no ferry check was wired up" do
+      itinerary = picker_with([open_zone], "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.ferry_crossings).to eq([])
+    end
+
+    # An unreachable zone answers nil, and nil is not a ferry.
+    it "treats a nil answer as no crossing rather than as an error" do
+      itinerary = picker_with_ferries([open_zone], { "anywhere" => nil },
+                                      "Small Edged" => 148).build_itinerary
+
+      expect(itinerary.ferry_crossings).to be_empty
+    end
+  end
 end

@@ -30,12 +30,13 @@ load File.join(lib_dir, 'uc_zone_table.rb')
 load File.join(lib_dir, 'uc_zone_picker.rb')
 load File.join(lib_dir, 'uc_zone_distance.rb')
 load File.join(lib_dir, 'uc_leg_settings.rb')
+load File.join(lib_dir, 'uc_ferry.rb')
 
 # Owns only presentation. All picker logic stays in the uber-combat lib; this
 # class formats what the lib already computed and adds distance, which the
 # lib has no reason to know about (spec: notes/uber-combat/33-zone-picker-spec.md).
 class UcZonesReport
-  ZONE_COL = '  %6s %8s %-24s %-9s %-12s %s'
+  ZONE_COL = '  %6s %8s %-24s %-9s %-12s %-18s %s'
 
   def initialize
     @character = UberCombat::Character.new
@@ -50,6 +51,14 @@ class UcZonesReport
     refuse_unknown_skills(settings)
     refuse_bad_creature_flags(settings)
     warn_about_max_skills(settings)
+    # findpath is served from the shortest-path tree #run already computes, so
+    # the whole candidate table costs ONE Dijkstra rather than one per row.
+    # @previous is nil until then, and a nil tree answers "no path", which is
+    # the same thing this report says about every row before it has distances.
+    @ferry = UberCombat::Ferry::LiveMap.new(
+      settings: settings,
+      findpath: ->(from, to) { @previous && UberCombat::Ferry::LiveMap.path_from(@previous, from, to) }
+    )
     @picker = UberCombat::ZonePicker.new(
       @character, @zone_table,
       UberCombat::LegSettings.premium(settings),
@@ -57,7 +66,8 @@ class UcZonesReport
       max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings),
       trainable_skills: UberCombat::LegSettings.trainable_skills(settings),
       creature_flags: UberCombat::LegSettings.require_creature_flags(settings),
-      distance: UberCombat::ZoneDistance.live
+      distance: UberCombat::ZoneDistance.live,
+      ferries: method(:ferries_for_zone)
     )
   end
 
@@ -68,11 +78,21 @@ class UcZonesReport
       return
     end
 
-    _previous, distances = room.dijkstra
+    previous, distances = room.dijkstra
     unless distances
       DRC.message('uc-zones: dijkstra failed from the current room; see the error above.')
       return
     end
+
+    # Stashed for #ferries_for_zone, which the picker calls back into during
+    # build_itinerary below and which has no other way to reach them. Set here
+    # rather than in the constructor because they are a fact about where the
+    # character is standing when the report runs, not about the session.
+    # @previous is the same search's tree, which is what lets the ferry check
+    # reconstruct any route without searching again.
+    @here = room.id
+    @distances = distances
+    @previous = previous
 
     DRC.message(format('=== uc-zones: %s @ room %d, %d zones loaded ===',
                        XMLData.name, room.id, @zone_table.zones.size))
@@ -147,12 +167,20 @@ class UcZonesReport
       return
     end
 
+    ferries = itinerary.ferry_crossings.to_h { |rec| [rec[:zone_key], rec[:detail][:crossings]] }
     itinerary.legs.each_with_index do |leg, index|
       stance = leg[:stance]
       DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
       DRC.message(format('    zone=%-24s distance=%-8s stance=%-12s defences=%s',
                          leg[:zone_key], UberCombat::ZoneDistance.label(leg[:distance]), stance[:policy],
                          @character.stance_order(stance[:policy]).join(' > ')), false)
+      crossings = ferries[leg[:zone_key]]
+      next unless crossings
+
+      # Printed under the leg it belongs to rather than in a list of its own,
+      # because the cost lands on that leg's every stint -- out and back.
+      DRC.message(format('    ferry=%s  (bescort waits for it; the leg pays this each way)',
+                         crossings.join(', ')), false)
     end
   end
 
@@ -206,6 +234,46 @@ class UcZonesReport
     end
   end
 
+  # Asked per row, and cheap: every route is reconstructed from the one
+  # Dijkstra tree #run already has, and the row has already resolved the room
+  # the character would actually walk to.
+  def annotate_ferries(rows)
+    rows.each do |row|
+      row[:ferry] = ferries_between(@here, row[:room]).map(&:to_s).join(', ')
+    end
+  end
+
+  # The picker's `ferries:` seam. It answers for a ZONE KEY, so resolving that
+  # to a room is this script's job -- the picker knows nothing about rooms and
+  # is not being taught. `method(:ferries_for_zone)` reaches a private method
+  # perfectly well, and the picker only ever calls it.
+  #
+  # The room chosen is the one the character would actually walk to: nearest by
+  # the same Dijkstra distances the candidate table is ranked on. A zone's
+  # entrances can sit on opposite sides of a river, so asking about the wrong
+  # one would report a crossing the trip never makes.
+  #
+  # DETECTION ONLY. Nothing in this script or in the picker acts on the answer;
+  # it is printed and that is all (user, 2026-09-07).
+  def ferries_for_zone(zone_key)
+    return [] unless @here && @distances
+
+    nearest = nearest_room(Map.rooms_by_tag(zone_key), @distances)
+    return [] unless nearest
+
+    ferries_between(@here, nearest[0])
+  end
+
+  # Never lets the ferry column be the thing that kills a report that was
+  # otherwise printing fine. A route we could not price reads as no ferry.
+  def ferries_between(from_id, to_id)
+    @ferry.ferries(from_id, to_id) || []
+  rescue StandardError => e
+    DRC.message(format('uc-zones: ferry check for room %s failed (%s: %s); reporting none.',
+                       to_id, e.class, e.message))
+    []
+  end
+
   def nearest_room(room_ids, distances)
     reachable = room_ids.filter_map { |id| distances[id] && [id, distances[id]] }
     reachable.min_by { |(_id, dist)| dist }
@@ -222,10 +290,17 @@ class UcZonesReport
       return
     end
 
-    DRC.message(format(ZONE_COL, 'DIST', 'ROOM', 'ZONE', 'BAND', 'STANCE', 'SKILLS'), false)
+    # FERRY is the only column here that is not a fact about the zone. DIST is
+    # Dijkstra seconds and a Dijkstra second is not a wall-clock second on a
+    # leg that waits for a boat, so a zone can top this list and still be the
+    # slowest trip on it. A blank means the character crosses under their own
+    # power or does not cross at all -- a swimmer and a passenger take
+    # different map edges, and this reports the one THIS character takes.
+    annotate_ferries(rows)
+    DRC.message(format(ZONE_COL, 'DIST', 'ROOM', 'ZONE', 'BAND', 'STANCE', 'FERRY', 'SKILLS'), false)
     rows.each do |row|
       DRC.message(format(ZONE_COL, format('%.1f', row[:distance]), row[:room], row[:key], row[:band],
-                         row[:stance], row[:skills]), false)
+                         row[:stance], row[:ferry], row[:skills]), false)
     end
   end
 

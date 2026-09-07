@@ -22,6 +22,7 @@ class FakeWorld
     @engaged = false
     @distances = {}
     @walk_calls = []
+    @ferries = {}
     @now = Time.utc(2026, 9, 3, 14, 22, 7)
     @current_room_id = nil
     @abort_reason = nil
@@ -40,6 +41,20 @@ class FakeWorld
 
   def rooms_for_tag(key)
     @room_tags.fetch(key, [])
+  end
+
+  # crossings: bescort invocation strings, as UberCombat::Ferry would classify
+  # them. Held as ready-made Crossing objects because the world contract hands
+  # the core objects, not strings.
+  def ferry(room_id, *escorts)
+    @ferries[room_id] = escorts.map do |escort|
+      name, *mode = escort.split
+      UberCombat::Ferry::Crossing.new(from: 0, to: room_id, escort: name, mode: mode, kind: :vehicle)
+    end
+  end
+
+  def ferries_to(room_id)
+    @ferries.fetch(room_id, [])
   end
 
   # Presentation only, so it is recorded rather than acted on -- but it IS
@@ -440,6 +455,25 @@ RSpec.describe UberCombat::Probe do
       expect(result["reachability"]["basic"]["line"]).to eq("A worried-looking farmhand bars your way")
     end
 
+    # Same rule as `line`, for the same reason: a route with no boat on it and
+    # a route nobody checked must stay distinguishable, and every record
+    # written before the field existed is honestly in the second category.
+    it "omits the crossings key entirely when no ferry is on the route" do
+      result = described_class.record(zone_key: "z1", verdict: :reached, tier: "basic", meta: meta,
+                                      crossings: [])
+
+      expect(result["reachability"]["basic"]).not_to have_key("crossings")
+    end
+
+    it "stores crossings as bescort invocations, not as objects, so the YAML stays readable" do
+      crossing = UberCombat::Ferry::Crossing.new(from: 957, to: 1904, escort: "ferry",
+                                                 mode: ["leth"], kind: :vehicle)
+      result = described_class.record(zone_key: "z1", verdict: :reached, tier: "basic", meta: meta,
+                                      crossings: [crossing])
+
+      expect(result["reachability"]["basic"]["crossings"]).to eq(["ferry leth"])
+    end
+
     it "keeps rooms_tried even when it holds a single room equal to room" do
       result = described_class.record(zone_key: "z1", verdict: :blocked, tier: "basic", meta: meta,
                                       room: 8469, rooms_tried: [8469])
@@ -564,6 +598,57 @@ RSpec.describe UberCombat::Probe do
       expect(outcome.records["retan_hara"]["reachability"]["basic"]["verdict"]).to eq("no_path")
       expect(world.walk_calls).to be_empty
       expect(outcome.visited).to eq(0)
+    end
+
+    # Detection only: the ferry is recorded next to the verdict and never
+    # taken into account when producing it.
+    it "records the ferry on the route it walked, without changing the verdict" do
+      world = FakeWorld.new
+      world.current_room_id = 8246
+      world.distances = { 10_041 => 13.8 }
+      z = zone("ossein_amalgams")
+      world.tag("ossein_amalgams", [10_041])
+      world.ferry(10_041, "ferry leth")
+      world.script_walk(10_041, [true, false, 90.0, nil, false, 10_041])
+
+      entry = session([z], world).run.records["ossein_amalgams"]["reachability"]["basic"]
+
+      expect(entry["verdict"]).to eq("reached")
+      expect(entry["crossings"]).to eq(["ferry leth"])
+    end
+
+    it "writes no crossings key for a zone the character walks to dry-shod" do
+      world = FakeWorld.new
+      world.current_room_id = 100
+      world.distances = { 201 => 10.0 }
+      z = zone("z1")
+      world.tag("z1", [201])
+      world.script_walk(201, [true, false, 5.0, nil, false, 201])
+
+      entry = session([z], world).run.records["z1"]["reachability"]["basic"]
+
+      expect(entry).not_to have_key("crossings")
+    end
+
+    # walk_to is about to move the character, so a route priced afterwards is
+    # the route home, not the route taken.
+    it "asks for the route before walking it, not after" do
+      world = FakeWorld.new
+      world.current_room_id = 100
+      world.distances = { 201 => 10.0 }
+      z = zone("z1")
+      world.tag("z1", [201])
+      world.ferry(201, "ferry leth")
+      world.script_walk(201, [true, false, 5.0, nil, false, 201])
+      asked_at = nil
+      allow(world).to receive(:ferries_to).and_wrap_original do |original, room_id|
+        asked_at = world.walk_calls.size
+        original.call(room_id)
+      end
+
+      session([z], world).run
+
+      expect(asked_at).to eq(0)
     end
 
     it "stops trying rooms the instant one attempt reaches the zone" do

@@ -11,6 +11,7 @@ require_relative "../lib/uc_leg_writer"
 require_relative "../lib/uc_director"
 require_relative "../lib/uc_probe"
 require_relative "../lib/uc_town"
+require_relative "../lib/uc_ferry"
 require_relative "support/fake_skills"
 require_relative "support/fake_zone_table"
 

@@ -308,6 +308,17 @@ module UberCombat
     #   engaged attempt is weaker evidence -- 37-zone-probe-spec.md:630 --
     #   but the probe still records it rather than discarding the result).
     # elapsed: wall-clock seconds the attempt took, or nil.
+    # crossings: UberCombat::Ferry::Crossing objects for the ferries on the
+    #   route this attempt planned, stored as their bescort invocations
+    #   ("ferry leth"). OMITTED when empty, for the same reason `line` is: a
+    #   route with no boat on it and a route nobody checked must stay
+    #   distinguishable, and every record written before this field existed
+    #   is honestly in the second category.
+    #
+    #   DETECTION ONLY. It never touches the verdict. Its job is to explain a
+    #   slow or timed-out attempt after the fact -- the deadline scales off
+    #   Dijkstra distance (see .deadline_for) and a Dijkstra second is not a
+    #   wall-clock second when the route waits for a boat to dock.
     #
     # This method NEVER writes premium: or provenance.premium. Those belong
     # to the elanthipedia harvest and to human adjudication
@@ -315,13 +326,14 @@ module UberCombat
     # `premium:` directly, so a probe guess written there would silently
     # gate zones on evidence that was never actually a verdict.
     def self.record(zone_key:, verdict:, tier:, meta:, room: nil, rooms_tried: [], line: nil,
-                    engaged: false, elapsed: nil)
+                    engaged: false, elapsed: nil, crossings: [])
       entry = {
         "verdict"     => verdict.to_s,
         "room"        => room,
         "rooms_tried" => rooms_tried
       }
       entry["line"] = line unless line.nil?
+      entry["crossings"] = crossings.map(&:to_s) unless crossings.nil? || crossings.empty?
       entry["character"] = meta[:character]
       entry["game"] = meta[:game]
       entry["map"] = meta[:map]
@@ -347,6 +359,12 @@ module UberCombat
     #   world.current_room_id            -> Integer, or nil when position is lost
     #   world.distances_from(room_id)    -> Hash{room_id => seconds}, or nil on failure
     #   world.rooms_for_tag(key)         -> Array<Integer>
+    #   world.ferries_to(room_id)        -> Array<Ferry::Crossing> for the
+    #                                    route from where the character stands
+    #                                    now. [] both when the route has no boat
+    #                                    on it and when there is no route at all.
+    #                                    DETECTION ONLY -- it is read into the
+    #                                    record and never into a verdict.
     #   world.announce(zone, room_id, index, count) -> nil, called once before
     #                                    every walk_to. Presentation only; the
     #                                    core never reads anything back from it.
@@ -520,6 +538,7 @@ module UberCombat
         elapsed = nil
 
         signature = nil
+        crossings = []
 
         rooms.each_with_index do |(room_id, distance), index|
           # Announced BEFORE the walk, never after. An attempt can take the
@@ -527,6 +546,10 @@ module UberCombat
           # a line first the operator watches a silent pause and cannot tell
           # a new zone from the same one wedged again.
           @world.announce(zone, room_id, index + 1, rooms.size)
+          # BEFORE the walk, because this is a fact about the route from where
+          # the character stands RIGHT NOW and walk_to is about to move them.
+          # Asking afterwards would price the trip from the far end.
+          crossings = @world.ferries_to(room_id)
           @world.reset_capture
           arrived, timed_out, elapsed = @world.walk_to(room_id, Probe.deadline_for(distance))
           tried << room_id
@@ -570,7 +593,7 @@ module UberCombat
         end
 
         record_for(zone.key, verdict, room: room, rooms_tried: tried, line: line,
-                                       engaged: engaged, elapsed: elapsed)
+                                       engaged: engaged, elapsed: elapsed, crossings: crossings)
       end
     end
   end

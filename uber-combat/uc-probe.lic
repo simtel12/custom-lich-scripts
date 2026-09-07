@@ -58,6 +58,7 @@ load File.join(lib_dir, 'uc_character.rb')
 load File.join(lib_dir, 'uc_zone_table.rb')
 load File.join(lib_dir, 'uc_leg_settings.rb')
 load File.join(lib_dir, 'uc_probe.rb')
+load File.join(lib_dir, 'uc_ferry.rb')
 
 require 'yaml'
 require 'time'
@@ -195,6 +196,10 @@ class ProbeWorld
     # a 331-zone run that is tens of thousands of array copies for data that
     # cannot change while the script runs.
     @rooms_cache = {}
+    # One router for the whole run. It reads Athletics and the flying-mount
+    # setting once and caches them, which matters because #ferries_to is asked
+    # per zone attempt (see UberCombat::Ferry::LiveMap#athletics).
+    @ferry = UberCombat::Ferry::LiveMap.new
     Flags.add(BLOCKED_FLAG, *BLOCKING_LINES)
   end
 
@@ -221,6 +226,34 @@ class ProbeWorld
 
     _previous, distances = room.dijkstra
     distances
+  end
+
+  # DETECTION ONLY. Nothing downstream of this may change a verdict, an
+  # ordering or a deadline -- it exists so a slow attempt has a recorded
+  # reason (user, 2026-09-07).
+  #
+  # Map.findpath, never a local search: the route has to be the one the LIVE
+  # character can walk, because a map edge's timeto StringProc closes the edge
+  # for a character who lacks the mount, the Athletics or the citizenship it
+  # asks for. See lib/uc_ferry.rb's header for the Segoltha, where a swimmer
+  # and a ferry passenger take genuinely different edges.
+  #
+  # [] on failure rather than nil: the probe's record is evidence about
+  # reachability, and this field must never be the thing that raises inside an
+  # attempt that was otherwise producing a good verdict. A route we could not
+  # price is reported as no ferry, and the verdict carries the real answer.
+  #
+  # LiveMap memoises on the [from, to] pair, which is what keeps this cheap
+  # while Probe.rank re-prices every candidate on every iteration.
+  def ferries_to(room_id)
+    here = current_room_id
+    return [] unless here
+
+    @ferry.ferries(here, room_id) || []
+  rescue StandardError => e
+    DRC.message(format('uc-probe: ferry check for room %s failed (%s: %s); reporting none.',
+                       room_id, e.class, e.message))
+    []
   end
 
   def reset_capture
@@ -655,10 +688,21 @@ class UcProbe
     # replaced a premium column that now reads `nil` on every line, and it
     # earns the space -- it is the number of entrances a blocked verdict has
     # to get through, so it predicts what a refusal will cost.
-    DRC.message(format('  %8s %8s %-30s %-10s %s', 'DIST', 'ROOM', 'ZONE', 'BAND', 'ROOMS'), false)
-    rows.sort_by { |row| row[:distance] }.first(15).each do |row|
-      DRC.message(format('  %8.1f %8d %-30s %-10s %d',
-                         row[:distance], row[:room], row[:key], row[:band], row[:rooms]), false)
+    #
+    # FERRY is the one column that does not come out of the zone table. DIST
+    # is Dijkstra seconds, and a Dijkstra second is not a wall-clock second on
+    # a leg that waits for a boat to dock, so a row can be near the top of
+    # this list and still be the slowest trip on it.
+    DRC.message(format('  %8s %8s %-30s %-10s %5s %s', 'DIST', 'ROOM', 'ZONE', 'BAND', 'ROOMS',
+                       'FERRY'), false)
+    shown = rows.sort_by { |row| row[:distance] }.first(15)
+    # Priced only for the rows actually printed. #ferries_to is a full
+    # Dijkstra per call, and `rows` can hold every pending zone in the table.
+    shown.each do |row|
+      ferries = world.ferries_to(row[:room])
+      DRC.message(format('  %8.1f %8d %-30s %-10s %5d %s',
+                         row[:distance], row[:room], row[:key], row[:band], row[:rooms],
+                         ferries.empty? ? '' : ferries.map(&:to_s).join(', ')), false)
     end
     DRC.message(format('  ... %d more', rows.size - 15), false) if rows.size > 15
   end
@@ -677,6 +721,23 @@ class UcProbe
     tally = outcome.records.values.group_by { |rec| rec['reachability'][@tier]['verdict'] }
     tally.sort_by { |verdict, _| verdict }.each do |verdict, list|
       DRC.message(format('  %-16s %4d', verdict, list.size), false)
+    end
+    report_crossings(outcome)
+  end
+
+  # Named, not counted. A ferry on the route is the usual explanation for an
+  # attempt whose elapsed time makes no sense against its Dijkstra distance,
+  # and that is only useful if the reader can see WHICH zone it was.
+  def report_crossings(outcome)
+    ferried = outcome.records.filter_map do |key, rec|
+      crossings = rec['reachability'][@tier]['crossings']
+      crossings && !crossings.empty? ? [key, crossings] : nil
+    end
+    return if ferried.empty?
+
+    DRC.message(format('  routes with a ferry on them: %d', ferried.size), false)
+    ferried.sort_by(&:first).each do |key, crossings|
+      DRC.message(format('    %-30s %s', key, crossings.join(', ')), false)
     end
   end
 
