@@ -17,8 +17,9 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
       .merge(attributes[:extra] || {}))
   end
 
-  def picker(zones, premium = false, province: nil)
-    described_class.new(character, FakeZoneTable.new(zones), premium, province: province)
+  def picker(zones, premium = false, province: nil, critters: {}, creature_flags: nil)
+    described_class.new(character, FakeZoneTable.new(zones, critters), premium, province: province,
+                                                                                creature_flags: creature_flags)
   end
 
   # Keeps a hunt near its home town instead of sending it somewhere wildly
@@ -67,6 +68,52 @@ RSpec.describe UberCombat::ZonePicker, "admissibility" do
 
       expect(record[:reason]).to eq(:province_excluded)
       expect(record[:detail][:zones_after_province]).to eq(0)
+    end
+  end
+
+  # The guild gates, as a profile lists them under require_creature_flags.
+  # Every zone here carries a known band and a one-creature roster, so the
+  # creature is the only thing that differs.
+  describe "the creature flags" do
+    let(:critters) do
+      { "Living" => { "rank" => { "min" => 100, "max" => 190 }, "construct" => false, "undead" => false,
+                      "corporeal" => true },
+        "Zombie" => { "rank" => { "min" => 100, "max" => 190 }, "construct" => false, "undead" => true,
+                      "corporeal" => true },
+        "Ghost"  => { "rank" => { "min" => 100, "max" => 190 }, "construct" => false, "undead" => true,
+                     "corporeal" => false } }
+    end
+
+    def home_of(key)
+      zone(key: key.downcase, min: 100, max: 190, extra: { "critter_refs" => { key.downcase => key } })
+    end
+
+    def admits?(key, flags)
+      target = home_of(key)
+      picker([target], critters: critters, creature_flags: flags).admissible?(target, "Small Edged")
+    end
+
+    it "admits every zone when no flags are set" do
+      expect(%w[Living Zombie Ghost].map { |key| admits?(key, nil) }).to eq([true, true, true])
+    end
+
+    # Thanatology is not learned from undead.
+    it "keeps a necromancer to living creatures" do
+      expect(%w[Living Zombie Ghost].map { |key| admits?(key, %w[living corporeal]) }).to eq([true, false, false])
+    end
+
+    # An empath may fight a corporeal undead and cannot touch an incorporeal one.
+    it "keeps an empath to corporeal undead" do
+      expect(%w[Living Zombie Ghost].map { |key| admits?(key, %w[construct_or_undead corporeal]) })
+        .to eq([false, true, false])
+    end
+
+    it "names creature_flags_excluded when the flags are what emptied the list" do
+      unplaced = picker([home_of("Zombie")], critters: critters, creature_flags: ["living"]).build_itinerary.unplaced
+      record = unplaced.find { |row| row[:skill] == "Small Edged" }
+
+      expect(record[:reason]).to eq(:creature_flags_excluded)
+      expect(record[:detail][:zones_after_creature_flags]).to eq(0)
     end
   end
 

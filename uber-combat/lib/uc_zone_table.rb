@@ -294,6 +294,22 @@ module UberCombat
                    "undead" => :undead, "corporeal" => :corporeal,
                    "living" => :living }.freeze
 
+    # The names a profile may list under uc_settings require_creature_flags,
+    # mapped to the all-of gate each one runs. A CLOSED set, so a typo is an
+    # error rather than a silently ignored line (LegSettings.unknown_creature_flags).
+    #
+    # Two axes live here and a character usually needs one of each:
+    #   guild     construct_or_undead (empath), living (necromancer)
+    #   capability corporeal (every non-cleric)
+    ZONE_GATES = { "construct_or_undead" => :all_construct_or_undead?,
+                   "living"              => :all_living?,
+                   "corporeal"           => :all_corporeal? }.freeze
+
+    # Every named gate passes. An empty list is no restriction.
+    def meets_creature_flags?(zone, flags)
+      flags.all? { |flag| public_send(ZONE_GATES.fetch(flag), zone) }
+    end
+
     # Every creature on this zone's roster, as Critter readers. Resolved through
     # critter_refs, never by bare noun: 13 nouns map to 2 or 3 records.
     #

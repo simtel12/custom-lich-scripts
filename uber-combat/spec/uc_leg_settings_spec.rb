@@ -312,6 +312,69 @@ RSpec.describe UberCombat::LegSettings do
     end
   end
 
+  # How a guild opts into the creature gates. A necromancer lists living, an
+  # empath construct_or_undead, and any non-cleric corporeal.
+  describe ".require_creature_flags" do
+    def flags_of(value)
+      get_settings_shape("uc_settings" => { "require_creature_flags" => value })
+    end
+
+    it "reads a necromancer's list" do
+      expect(described_class.require_creature_flags(flags_of(%w[living corporeal])))
+        .to eq(%w[living corporeal])
+    end
+
+    it "is empty when the key is absent" do
+      expect(described_class.require_creature_flags(get_settings_shape("uc_settings" => {}))).to eq([])
+    end
+
+    it "is empty when there is no uc_settings block at all" do
+      expect(described_class.require_creature_flags(get_settings_shape({}))).to eq([])
+    end
+
+    it "drops a repeated name" do
+      expect(described_class.require_creature_flags(flags_of(%w[living living]))).to eq(["living"])
+    end
+
+    it "returns only real gate names, leaving the errors to .creature_flag_errors" do
+      expect(described_class.require_creature_flags(flags_of(%w[livng corporeal]))).to eq(["corporeal"])
+    end
+  end
+
+  describe ".creature_flag_errors" do
+    def errors_for(value)
+      described_class.creature_flag_errors(
+        get_settings_shape("uc_settings" => { "require_creature_flags" => value })
+      )
+    end
+
+    it "finds nothing wrong with an empath's list" do
+      expect(errors_for(%w[construct_or_undead corporeal])).to eq([])
+    end
+
+    it "finds nothing wrong when the key is absent" do
+      expect(described_class.creature_flag_errors(get_settings_shape("uc_settings" => {}))).to eq([])
+    end
+
+    # A dropped typo would send a necromancer at undead with nothing to say
+    # why, so it has to stop the run rather than warn.
+    it "reports a misspelled gate by name" do
+      expect(errors_for(%w[livng])).to eq(
+        ["require_creature_flags: livng is not one of construct_or_undead, living, corporeal"]
+      )
+    end
+
+    it "reports a bare word written where a list belongs" do
+      expect(errors_for("living")).to eq(["require_creature_flags must be a list, for example [living, corporeal]"])
+    end
+
+    # The two guild gates contradict each other on every non-empty roster.
+    it "reports construct_or_undead and living together" do
+      expect(errors_for(%w[construct_or_undead living]))
+        .to eq(["require_creature_flags: construct_or_undead and living together admit no zone"])
+    end
+  end
+
   describe ".in_province_only" do
     it "reads the province name" do
       settings = get_settings_shape("uc_settings" => { "in_province_only" => "Zoluren" })

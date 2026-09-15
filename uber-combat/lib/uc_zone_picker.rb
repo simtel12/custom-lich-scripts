@@ -74,14 +74,19 @@ module UberCombat
     # and spells catalogues, because the catalogue IS the declaration of what
     # to train: a weapon left out is a weapon not trained, not an omission to
     # be reported (user, 2026-09-05).
+    # creature_flags: names from CritterFlags::ZONE_GATES that every zone must
+    # pass, or nil for none. LegSettings.require_creature_flags builds it. This
+    # is how an empath is kept to constructs and undead, a necromancer to living
+    # creatures, and a non-cleric away from incorporeal ones.
     def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil,
-                   trainable_skills: nil)
+                   trainable_skills: nil, creature_flags: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
       @province = province
       @max_skills_per_leg = max_skills_per_leg || MAX_SKILLS_PER_LEG
       @trainable_skills = trainable_skills
+      @creature_flags = creature_flags || []
     end
 
     # nil means no restriction, so every existing caller and every test that
@@ -110,6 +115,7 @@ module UberCombat
       return false if zone.low_confidence? && !zone.allow_low_confidence_auto_select?
       return false if premium_locked?(zone)
       return false if out_of_province?(zone)
+      return false if creature_flags_unmet?(zone)
 
       rank = @character.rank_of(skill)
       return false unless zone.rank_min <= rank && rank <= zone.rank_max
@@ -145,6 +151,17 @@ module UberCombat
     # hunter does not want to be sent. Nil province admits everything.
     def out_of_province?(zone)
       !zone.in_province?(@province)
+    end
+
+    # A zone whose creatures this character must not or cannot hunt, per its
+    # require_creature_flags. Unlike the province, this is about the creatures:
+    # an empath's guild forbids living ones, a necromancer learns nothing from
+    # unliving ones, and a non-cleric cannot touch incorporeal ones.
+    #
+    # Public for the same reason #premium_locked? is: a diagnostic listing
+    # zones one by one must give the same answer the itinerary does.
+    def creature_flags_unmet?(zone)
+      !@zone_table.meets_creature_flags?(zone, @creature_flags)
     end
 
     def admissible_zones_for(skill)
@@ -328,6 +345,7 @@ module UberCombat
       confident = judged.reject { |zone| zone.low_confidence? && !zone.allow_low_confidence_auto_select? }
       reachable = confident.reject { |zone| premium_locked?(zone) }
       in_province = reachable.reject { |zone| out_of_province?(zone) }
+      huntable = in_province.reject { |zone| creature_flags_unmet?(zone) }
 
       reason = if in_band.empty?
                  :no_band_in_range
@@ -341,6 +359,8 @@ module UberCombat
                  :premium_excluded
                elsif in_province.empty?
                  :province_excluded
+               elsif huntable.empty?
+                 :creature_flags_excluded
                else
                  :defense_ceiling
                end
@@ -348,7 +368,8 @@ module UberCombat
       { skill: skill, reason: reason,
         detail: { rank: rank, zones_in_band: in_band.size, zones_after_escort: walkable.size,
                   zones_after_critter_bands: judged.size, zones_after_confidence: confident.size,
-                  zones_after_premium: reachable.size, zones_after_province: in_province.size } }
+                  zones_after_premium: reachable.size, zones_after_province: in_province.size,
+                  zones_after_creature_flags: huntable.size } }
     end
 
     # A skill the character HAS but does not train. Reported, and deliberately

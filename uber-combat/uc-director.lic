@@ -160,6 +160,7 @@ class DirectorWorld
     # the zones they paid for.
     refuse_without_weapons(settings)
     refuse_unknown_skills(settings)
+    refuse_bad_creature_flags(settings)
     warn_about_max_skills(settings)
     warn_about_duration(settings)
     @picker = UberCombat::ZonePicker.new(
@@ -167,7 +168,8 @@ class DirectorWorld
       UberCombat::LegSettings.premium(settings),
       province: UberCombat::LegSettings.in_province_only(settings),
       max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings),
-      trainable_skills: UberCombat::LegSettings.trainable_skills(settings)
+      trainable_skills: UberCombat::LegSettings.trainable_skills(settings),
+      creature_flags: UberCombat::LegSettings.require_creature_flags(settings)
     )
     @overlay_engine = UberCombat::LegOverlay.new(
       @character,
@@ -557,6 +559,19 @@ class DirectorWorld
       DRC.message(format('    %s: %s%s', row[:source], row[:name],
                          guess ? format('   did you mean %s', guess) : ''), false)
     end
+    exit
+  end
+
+  # require_creature_flags is the guild's rule about what it may hunt, so a
+  # mistake in it is fatal. A mistyped gate that was quietly dropped would send
+  # an empath at living creatures or a necromancer at undead, and nothing would
+  # say why.
+  def refuse_bad_creature_flags(settings)
+    errors = UberCombat::LegSettings.creature_flag_errors(settings)
+    return if errors.empty?
+
+    DRC.message('uc: uc_settings require_creature_flags is wrong. Fix it and run again:')
+    errors.each { |line| DRC.message("    #{line}", false) }
     exit
   end
 

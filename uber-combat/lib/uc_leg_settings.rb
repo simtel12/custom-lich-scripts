@@ -192,6 +192,48 @@ module UberCombat
       !raw.nil? && hunt_duration_minutes(settings).nil?
     end
 
+    # The creature gates this character requires of every zone, as a list of
+    # names from CritterFlags::ZONE_GATES. Empty means no restriction.
+    #
+    # This is how a guild opts in (user, 2026-09-15). An empath lists
+    # construct_or_undead, because it may attack nothing else. A necromancer
+    # lists living, because Thanatology is not learned from an undead or a
+    # construct. Any non-cleric lists corporeal as well, because an ordinary
+    # weapon cannot touch an incorporeal creature.
+    #
+    # Only well-formed names come back. The caller must check
+    # .creature_flag_errors first and refuse to run on any, the same as a
+    # misspelled skill: dropping a mistyped `livng` quietly would send a
+    # necromancer at undead with nothing to say why.
+    def self.require_creature_flags(settings)
+      raw = uc_settings(settings)["require_creature_flags"]
+      return [] unless raw.is_a?(Array)
+
+      raw.map(&:to_s).select { |name| CritterFlags::ZONE_GATES.key?(name) }.uniq
+    end
+
+    # Every way the setting can be wrong, as printable lines. Empty when it is
+    # absent or clean.
+    #
+    # All of these are fatal, not warnings. Each one either drops a gate the
+    # person meant to apply, which routes a character at creatures its guild
+    # forbids or cannot learn from, or combines gates that admit no zone at
+    # all, which reads exactly like a character with nowhere to hunt.
+    def self.creature_flag_errors(settings)
+      raw = uc_settings(settings)["require_creature_flags"]
+      return [] if raw.nil?
+      return ["require_creature_flags must be a list, for example [living, corporeal]"] unless raw.is_a?(Array)
+
+      errors = raw.map(&:to_s).reject { |name| CritterFlags::ZONE_GATES.key?(name) }.map do |name|
+        "require_creature_flags: #{name} is not one of #{CritterFlags::ZONE_GATES.keys.join(', ')}"
+      end
+      flags = require_creature_flags(settings)
+      if flags.include?("construct_or_undead") && flags.include?("living")
+        errors << "require_creature_flags: construct_or_undead and living together admit no zone"
+      end
+      errors
+    end
+
     # The skills this character actually wants to train: every skill named in
     # the weapons catalogue, plus every skill named in the spells catalogue.
     #

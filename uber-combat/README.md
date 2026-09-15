@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-535 examples, about 5 seconds, no game needed.
+549 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -109,6 +109,7 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 | `in_province_only` | Stay inside one province, for example `Zoluren`. Blank or absent means no limit |
 | `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
 | `hunt_duration_minutes` | Minutes to hunt in one stint. Absent means 30 |
+| `require_creature_flags` | Gates every creature in a zone must pass: `living`, `construct_or_undead`, `corporeal`. See below |
 
 ### The weapons catalogue is the list of what to train
 
@@ -210,6 +211,33 @@ more lot of overhead each. Raise it for cheaper cycles and a thinner share.
 
 A value that is not a positive whole number is ignored, and the script says so
 rather than falling back in silence.
+
+### Keeping a guild to the creatures it can hunt
+
+`require_creature_flags` lists gates, and a zone is used only if every creature
+on its roster passes all of them. Combat-trainer attacks everything in the
+room, so one creature that fails makes the whole zone unusable.
+
+| Gate | Passes | Who lists it |
+| --- | --- | --- |
+| `construct_or_undead` | constructs and undead | Empaths, who may attack nothing else |
+| `living` | creatures that are neither | Necromancers, who learn no Thanatology from the other kind |
+| `corporeal` | creatures an ordinary weapon can touch | Everyone who is not a Cleric |
+
+An empath lists `construct_or_undead` and `corporeal`. A necromancer lists
+`living` and `corporeal`.
+
+```yaml
+uc_settings:
+  require_creature_flags:
+    - living
+    - corporeal
+```
+
+A creature Elanthipedia has no data for fails every gate. A misspelled gate, a
+value that is not a list, and `construct_or_undead` with `living` (which no zone
+can pass) all stop the scripts with a message. A skill that loses every zone to
+these gates is reported as `creature_flags_excluded`.
 
 ### Testing a cycle quickly
 
@@ -335,8 +363,9 @@ The zone rollups (`qualifying_ratio`, `flag_census`, `all_construct_or_undead?`,
 never stored, per the data file's own rule. They put 293 zones in `normal`, 190
 in `skin`, 140 in `lockpick`, 31 in `cleric`, 75 in `empath` and 224 in `necro`.
 
-Nothing consumes these yet. The picker, the overlay and the director are
-unchanged; `43-critter-enrichment.md` proposes what should consume them.
+The picker consumes the three gates through `require_creature_flags` (see
+Settings). Nothing else consumes the flags yet; `43-critter-enrichment.md`
+proposes loot legs.
 
 ## The runtime library path
 
