@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-549 examples, about 5 seconds, no game needed.
+612 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -82,7 +82,7 @@ cd custom-scripts
 BUNDLE_GEMFILE=uber-combat/Gemfile bundle exec rubocop uber-combat
 ```
 
-31 files, no offenses. The custom cop rejects non-ASCII source. Write no
+34 files, no offenses. The custom cop rejects non-ASCII source. Write no
 arrows, no em dashes and no smart quotes in `.rb` files.
 
 The suite runs in one process and needs no game runtime. `spec/support/` holds
