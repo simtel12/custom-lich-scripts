@@ -22,7 +22,8 @@ calls and the printing, and they own no decision.
 | --- | --- |
 | `lib/uc_character.rb` | Rank metric, defensive metric, the two offense sets, the defence ordering, mindstate reads |
 | `lib/uc_zone_table.rb` | Loader for `base-uc-zones.yaml`, zone and critter readers, critter lookup through `critter_refs`, the enrichment-flag rollups |
-| `lib/uc_zone_picker.rb` | Admissibility, clustering, stance derivation, the itinerary builder |
+| `lib/uc_zone_picker.rb` | Admissibility, clustering, stance derivation, the itinerary builder, nearest-candidate zone choice |
+| `lib/uc_zone_distance.rb` | Travel distance from the current room to a zone's hunting rooms. `ZoneDistance.live` is the one Lich-facing entry point; the lookup itself is pure |
 | `lib/uc_leg_tracker.rb` | Leg advancement: the hard exit, mindlock, no-gain, reselect |
 | `lib/uc_leg_overlay.rb` | Maps a leg plus live character state to a complete profile overlay hash, and reports its gaps |
 | `lib/uc_leg_settings.rb` | The one place Lich's `uc_settings` shape is read: weapons, spells, premium, `in_province_only`, `max_skills_per_leg` |
@@ -71,7 +72,7 @@ bundle install
 rspec
 ```
 
-612 examples, about 5 seconds, no game needed.
+623 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -82,7 +83,7 @@ cd custom-scripts
 BUNDLE_GEMFILE=uber-combat/Gemfile bundle exec rubocop uber-combat
 ```
 
-34 files, no offenses. The custom cop rejects non-ASCII source. Write no
+36 files, no offenses. The custom cop rejects non-ASCII source. Write no
 arrows, no em dashes and no smart quotes in `.rb` files.
 
 The suite runs in one process and needs no game runtime. `spec/support/` holds

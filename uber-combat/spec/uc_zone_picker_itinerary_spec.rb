@@ -248,6 +248,54 @@ RSpec.describe UberCombat::ZonePicker, "the itinerary builder" do
       expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["tight"])
     end
 
+    # The user's report, 2026-09-15: standing in Shard, uc-leg sent the leg to
+    # Ratha because the Ratha zone's band was the narrower one.
+    describe "choosing among candidates by travel distance" do
+      def picker_near(zone_distances, skills = { "Small Edged" => 148 })
+        character = picker_character(skills)
+        described_class.new(character, FakeZoneTable.new(zones), distance: zone_distances.method(:[]))
+      end
+
+      it "picks the nearest candidate even when its band is wider" do
+        itinerary = picker_near({ "tight" => 900.0, "wide" => 12.0 }).build_itinerary
+
+        expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["wide"])
+      end
+
+      it "falls back to the narrowest band when the distances tie" do
+        itinerary = picker_near({ "tight" => 12.0, "wide" => 12.0 }).build_itinerary
+
+        expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["tight"])
+      end
+
+      it "puts a candidate with no known distance after every reachable one" do
+        itinerary = picker_near({ "wide" => 5000.0 }).build_itinerary
+
+        expect(itinerary.legs.map { |leg| leg[:zone_key] }).to eq(["wide"])
+      end
+
+      it "records the chosen zone's distance on the leg" do
+        itinerary = picker_near({ "tight" => 900.0, "wide" => 12.0 }).build_itinerary
+
+        expect(itinerary.legs.first[:distance]).to eq(12.0)
+      end
+
+      it "records a nil distance when the picker was given no distance" do
+        itinerary = picker_with(zones, "Small Edged" => 148).build_itinerary
+
+        expect(itinerary.legs.first[:distance]).to be_nil
+      end
+
+      # Debilitation rides the leg's CHOSEN zone, so a distance-chosen zone
+      # must be the one its band is checked against.
+      it "checks Debilitation against the zone distance chose" do
+        itinerary = picker_near({ "tight" => 900.0, "wide" => 12.0 },
+                                "Small Edged" => 148, "Debilitation" => 190).build_itinerary
+
+        expect(itinerary.legs.first[:skills]).to include("Debilitation")
+      end
+    end
+
     it "orders the legs by descending rank" do
       itinerary = picker_with(zones, "Small Edged" => 148, "Bow" => 105).build_itinerary
 

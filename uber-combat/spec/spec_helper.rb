@@ -3,6 +3,7 @@
 require_relative "../lib/uc_character"
 require_relative "../lib/uc_zone_table"
 require_relative "../lib/uc_zone_picker"
+require_relative "../lib/uc_zone_distance"
 require_relative "../lib/uc_leg_tracker"
 require_relative "../lib/uc_leg_overlay"
 require_relative "../lib/uc_leg_settings"
