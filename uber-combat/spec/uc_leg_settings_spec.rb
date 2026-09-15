@@ -495,4 +495,77 @@ RSpec.describe UberCombat::LegSettings do
       expect(described_class.known_spell_names(data)).to eq([])
     end
   end
+
+  describe ".town_thresholds" do
+    it "reads the three uc_settings keys and crossing-repair's own repair_timer" do
+      settings = get_settings_shape(
+        "uc_settings"  => { "town_encumbrance" => 4, "town_box_limit" => 6, "town_coin_limit" => 5000 },
+        "repair_timer" => 600
+      )
+
+      expect(described_class.town_thresholds(settings))
+        .to eq(encumbrance: 4, box_limit: 6, coin_limit: 5000, repair_timer: 600)
+    end
+
+    it "reads every value as nil when nothing is set, so Town applies its defaults" do
+      settings = get_settings_shape({})
+
+      expect(described_class.town_thresholds(settings))
+        .to eq(encumbrance: nil, box_limit: nil, coin_limit: nil, repair_timer: nil)
+    end
+
+    it "falls back to combat-trainer's box_loot_limit for the box limit" do
+      settings = get_settings_shape("box_loot_limit" => 5)
+
+      expect(described_class.town_thresholds(settings)[:box_limit]).to eq(5)
+    end
+
+    it "prefers town_box_limit over box_loot_limit" do
+      settings = get_settings_shape("uc_settings" => { "town_box_limit" => 9 }, "box_loot_limit" => 5)
+
+      expect(described_class.town_thresholds(settings)[:box_limit]).to eq(9)
+    end
+
+    # base.yaml ships `box_loot_limit:` with no value, which loads as nil.
+    it "reads a blank box_loot_limit as nil" do
+      settings = get_settings_shape("box_loot_limit" => nil)
+
+      expect(described_class.town_thresholds(settings)[:box_limit]).to be_nil
+    end
+
+    # A Symbol key reads nil here, and the default would hide the mistake.
+    it "reads the nested keys as Strings, not Symbols" do
+      settings = get_settings_shape("uc_settings" => { town_coin_limit: 5000 })
+
+      expect(described_class.town_thresholds(settings)[:coin_limit]).to be_nil
+    end
+
+    it "reads an encumbrance outside 1 to 11 as nil" do
+      [0, 12, -1].each do |level|
+        settings = get_settings_shape("uc_settings" => { "town_encumbrance" => level })
+
+        expect(described_class.town_thresholds(settings)[:encumbrance]).to be_nil
+      end
+    end
+
+    it "reads a non-integer value as nil" do
+      settings = get_settings_shape("uc_settings" => { "town_coin_limit" => "5 gold" }, "repair_timer" => "600")
+
+      expect(described_class.town_thresholds(settings).values_at(:coin_limit, :repair_timer)).to eq([nil, nil])
+    end
+  end
+
+  describe ".bad_town_keys" do
+    it "names each present but unusable key" do
+      settings = get_settings_shape(
+        "uc_settings" => { "town_encumbrance" => 20, "town_box_limit" => 0, "town_coin_limit" => 100 }
+      )
+
+      expect(described_class.bad_town_keys(settings)).to eq(["town_encumbrance", "town_box_limit"])
+    end
+
+    it "never names a missing key" do
+      expect(described_class.bad_town_keys(get_settings_shape({}))).to be_empty
+    end
+  end
 end

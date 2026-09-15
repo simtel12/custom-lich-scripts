@@ -234,6 +234,54 @@ module UberCombat
       errors
     end
 
+    # The town cycle's thresholds, as Town.thresholds takes them. Each value is
+    # a positive Integer or nil, and nil means "take Town's default".
+    #
+    #   town_encumbrance  uc_settings, $ENC_MAP level 1-11 (3 is Burdened)
+    #   town_box_limit    uc_settings, then combat-trainer's own
+    #                     box_loot_limit, so a character who already capped
+    #                     box looting gets a trip at that same count
+    #   town_coin_limit   uc_settings, copper in the hometown currency
+    #   repair_timer      crossing-repair's OWN top-level key, in seconds. It
+    #                     is read, never duplicated, so the two scripts can
+    #                     never disagree about when a repair is due.
+    #
+    # Same fail-open-and-report shape as .max_skills_per_leg: a present but
+    # unusable value reads as nil, and .bad_town_keys names it.
+    TOWN_KEYS = ["town_encumbrance", "town_box_limit", "town_coin_limit"].freeze
+    ENCUMBRANCE_RANGE = (1..11)
+
+    def self.town_thresholds(settings)
+      {
+        encumbrance: town_encumbrance(settings),
+        box_limit: positive_integer(uc_settings(settings)["town_box_limit"]) ||
+          positive_integer(settings.box_loot_limit),
+        coin_limit: positive_integer(uc_settings(settings)["town_coin_limit"]),
+        repair_timer: positive_integer(settings.repair_timer)
+      }
+    end
+
+    def self.town_encumbrance(settings)
+      value = positive_integer(uc_settings(settings)["town_encumbrance"])
+      ENCUMBRANCE_RANGE.cover?(value) ? value : nil
+    end
+
+    # The uc_settings town keys that are present but unusable. A missing key is
+    # not a mistake and is never named.
+    def self.bad_town_keys(settings)
+      block = uc_settings(settings)
+      TOWN_KEYS.select do |key|
+        next false if block[key].nil?
+
+        key == "town_encumbrance" ? town_encumbrance(settings).nil? : positive_integer(block[key]).nil?
+      end
+    end
+
+    def self.positive_integer(value)
+      value.is_a?(Integer) && value.positive? ? value : nil
+    end
+    private_class_method :positive_integer
+
     # The skills this character actually wants to train: every skill named in
     # the weapons catalogue, plus every skill named in the spells catalogue.
     #

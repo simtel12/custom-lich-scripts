@@ -1054,3 +1054,296 @@ RSpec.describe UberCombat::Director do
     end
   end
 end
+
+# ------------------------------------------------------------------ plugins
+#
+# The wiki's section 9 test list, against the registry in lib/uc_director.rb,
+# plus one example for each hook site in Session#run. Stub plugins live at file
+# scope for the same Lint/ConstantDefinitionInBlock reason as the world above.
+
+# Records every hook it is called with, and answers each with a preset value.
+class DirectorRecordingPlugin
+  HOOKS = [:after_initialize, :before_run, :itinerary_built, :before_stint, :after_stint,
+           :after_run, :cleanup].freeze
+
+  attr_reader :calls
+
+  def initialize(answers = {})
+    @answers = answers
+    @calls = []
+  end
+
+  HOOKS.each do |hook|
+    define_method(hook) do |*args, **kwargs|
+      @calls << [hook, args, kwargs]
+      @answers[hook]
+    end
+  end
+
+  def custom_command(value)
+    "handled #{value}"
+  end
+
+  def names
+    @calls.map(&:first)
+  end
+end
+
+# Raises in every hook.
+class DirectorExplodingPlugin
+  DirectorRecordingPlugin::HOOKS.each do |hook|
+    define_method(hook) { |*_args, **_kwargs| raise "boom in #{hook}" }
+  end
+end
+
+# Implements nothing at all.
+class DirectorInertPlugin; end
+
+RSpec.describe "UberCombat::Director plugins" do
+  let(:director) { UberCombat::Director }
+
+  before do
+    director.registered_plugins.clear
+    director.plugin_error_handler = nil
+  end
+
+  after do
+    director.registered_plugins.clear
+    director.plugin_error_handler = nil
+  end
+
+  describe "the registry" do
+    it "accumulates plugins in registration order" do
+      first = DirectorInertPlugin.new
+      second = DirectorInertPlugin.new
+      director.register_plugin(first)
+      director.register_plugin(second)
+
+      expect(director.registered_plugins).to eq([first, second])
+    end
+
+    it "fire_hook returns nil when no plugin is registered" do
+      expect(director.fire_hook(:before_stint, :host)).to be_nil
+    end
+
+    it "fire_hook returns nil when no plugin implements the hook" do
+      director.register_plugin(DirectorInertPlugin.new)
+
+      expect(director.fire_hook(:before_stint, :host)).to be_nil
+    end
+
+    it "fire_hook returns the first non-nil answer and stops polling" do
+      deferring = DirectorRecordingPlugin.new
+      answering = DirectorRecordingPlugin.new(before_stint: :break)
+      never_asked = DirectorRecordingPlugin.new(before_stint: :other)
+      [deferring, answering, never_asked].each { |plugin| director.register_plugin(plugin) }
+
+      expect(director.fire_hook(:before_stint, :host)).to eq(:break)
+      expect(deferring.names).to eq([:before_stint])
+      expect(never_asked.names).to be_empty
+    end
+
+    # The classic bug: `unless result` treats a real false as a deferral.
+    it "fire_hook treats false as an answer, not a deferral" do
+      director.register_plugin(DirectorRecordingPlugin.new(before_stint: false))
+      later = DirectorRecordingPlugin.new(before_stint: :break)
+      director.register_plugin(later)
+
+      expect(director.fire_hook(:before_stint, :host)).to be(false)
+      expect(later.names).to be_empty
+    end
+
+    it "fire_hook isolates a raising plugin and asks the next one" do
+      director.register_plugin(DirectorExplodingPlugin.new)
+      director.register_plugin(DirectorRecordingPlugin.new(before_stint: :break))
+
+      expect(director.fire_hook(:before_stint, :host)).to eq(:break)
+    end
+
+    it "notify_hook calls every implementing plugin and returns nil" do
+      one = DirectorRecordingPlugin.new(before_run: :ignored)
+      two = DirectorRecordingPlugin.new
+      director.register_plugin(one)
+      director.register_plugin(DirectorInertPlugin.new)
+      director.register_plugin(two)
+
+      expect(director.notify_hook(:before_run, :host, budget: 1, unit: :stints)).to be_nil
+      expect([one.names, two.names]).to eq([[:before_run], [:before_run]])
+    end
+
+    it "notify_hook continues after one plugin raises" do
+      director.register_plugin(DirectorExplodingPlugin.new)
+      survivor = DirectorRecordingPlugin.new
+      director.register_plugin(survivor)
+      director.notify_hook(:cleanup, :host)
+
+      expect(survivor.names).to eq([:cleanup])
+    end
+
+    it "hands each swallowed error to the error handler" do
+      seen = []
+      director.plugin_error_handler = ->(plugin, hook, error) { seen << [plugin.class, hook, error.message] }
+      director.register_plugin(DirectorExplodingPlugin.new)
+      director.notify_hook(:cleanup, :host)
+
+      expect(seen).to eq([[DirectorExplodingPlugin, :cleanup, "boom in cleanup"]])
+    end
+
+    it "survives an error handler that raises" do
+      director.plugin_error_handler = ->(*) { raise "the reporter broke" }
+      director.register_plugin(DirectorExplodingPlugin.new)
+
+      expect { director.fire_hook(:before_stint, :host) }.not_to raise_error
+    end
+
+    # uc-probe.lic, uc-leg.lic or a second load of this file must not empty
+    # the registry of a director that is already running.
+    it "keeps registered plugins when the lib file is loaded again" do
+      plugin = DirectorInertPlugin.new
+      director.register_plugin(plugin)
+      original_verbose = $VERBOSE
+      $VERBOSE = nil
+      load File.expand_path("../lib/uc_director.rb", __dir__)
+      $VERBOSE = original_verbose
+
+      expect(director.registered_plugins).to eq([plugin])
+    end
+  end
+
+  describe "the hook sites in Session#run" do
+    def leg(skills, zone_key: "crossing_rats")
+      { skills: skills, zone_key: zone_key, stance: { policy: :spread, key: skills.first }, min_mana: nil }
+    end
+
+    def world_for(*legs)
+      itinerary = UberCombat::ZonePicker::Itinerary.new(legs: legs, unplaced: [], unresolved_premium: [])
+      FakeDirectorWorld.new(itinerary, ranks: { "Bow" => 100, "Brawling" => 90 })
+    end
+
+    let(:bow) { leg(["Bow"]) }
+    let(:brawling) { leg(["Brawling"], zone_key: "sand_beetles") }
+
+    it "changes nothing when no plugin is registered" do
+      world = world_for(bow)
+      outcome = UberCombat::Director::Session.new(world).run(2)
+
+      expect(outcome.stopped).to eq(:budget_spent)
+      expect(world.event_names).not_to include(:plugin_break)
+    end
+
+    it "passes the host as the first argument of every hook" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world_for(bow), host: :the_host).run(1)
+
+      expect(plugin.calls.map { |call| call[1].first }).to all(eq(:the_host))
+    end
+
+    it "fires the lifecycle hooks in order for one stint" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world_for(bow, brawling)).run(1)
+
+      expect(plugin.names).to eq([:before_run, :itinerary_built, :before_stint, :after_stint, :after_run])
+    end
+
+    it "fires itinerary_built with the completed cycle count on a wrap" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world_for(bow, brawling)).run(1, unit: :cycles)
+
+      cycles = plugin.calls.select { |call| call.first == :itinerary_built }.map { |call| call[2][:cycle] }
+      expect(cycles).to eq([0, 1])
+    end
+
+    it "stops before the overlay write when before_stint answers :break" do
+      director.register_plugin(DirectorRecordingPlugin.new(before_stint: :break))
+      world = world_for(bow)
+      outcome = UberCombat::Director::Session.new(world).run(3)
+
+      expect(outcome.stopped).to eq(:plugin_break)
+      expect(world.trace).not_to include(:write_overlay)
+      expect(world.event(:plugin_break).first[:hook]).to eq(:before_stint)
+    end
+
+    it "fires after_stint after the post-stint snapshot" do
+      order = []
+      world = world_for(bow)
+      plugin = DirectorRecordingPlugin.new
+      plugin.define_singleton_method(:after_stint) do |*_args, **_kwargs|
+        order << world.trace.dup
+        nil
+      end
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world).run(1)
+
+      expect(order.first.last(3)).to eq([:run_stint, :snapshot, :announce])
+    end
+
+    it "hands after_stint the measured stint" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world_for(bow)).run(1)
+
+      call = plugin.calls.find { |recorded| recorded.first == :after_stint }
+      expect(call[2][:stint]).to be_a(UberCombat::Director::Stint)
+      expect(call[2][:leg_index]).to eq(0)
+    end
+
+    it "stops after the stint when after_stint answers :break, and counts the stint" do
+      director.register_plugin(DirectorRecordingPlugin.new(after_stint: :break))
+      world = world_for(bow)
+      outcome = UberCombat::Director::Session.new(world).run(3)
+
+      expect(outcome.stopped).to eq(:plugin_break)
+      expect(outcome.productive).to eq(1)
+      expect(world.trace.count(:run_stint)).to eq(1)
+      expect(world.recoveries).to be_empty
+    end
+
+    it "fires after_stint for a stint that failed to hunt" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      world = world_for(bow)
+      world.script_stint(outcome: :timeout, stop_reason: nil)
+      UberCombat::Director::Session.new(world).run(1)
+
+      expect(plugin.names.count(:after_stint)).to be >= 1
+    end
+
+    # Something else drives the character. A town trip would fight it.
+    it "does not fire after_stint when the launch was refused" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      world = world_for(bow)
+      world.script_stint(outcome: :start_error, stop_reason: nil)
+      outcome = UberCombat::Director::Session.new(world).run(1)
+
+      expect(outcome.stopped).to eq(:launch_refused)
+      expect(plugin.names).not_to include(:after_stint)
+    end
+
+    it "ignores an answer other than :break" do
+      director.register_plugin(DirectorRecordingPlugin.new(before_stint: false, after_stint: :continue))
+      outcome = UberCombat::Director::Session.new(world_for(bow)).run(2)
+
+      expect(outcome.stopped).to eq(:budget_spent)
+    end
+
+    it "keeps running when a plugin raises in every hook" do
+      director.register_plugin(DirectorExplodingPlugin.new)
+      outcome = UberCombat::Director::Session.new(world_for(bow)).run(2)
+
+      expect(outcome.stopped).to eq(:budget_spent)
+    end
+
+    it "fires after_run with the stop reason" do
+      plugin = DirectorRecordingPlugin.new
+      director.register_plugin(plugin)
+      UberCombat::Director::Session.new(world_for(bow)).run(1)
+
+      call = plugin.calls.find { |recorded| recorded.first == :after_run }
+      expect(call[2][:reason]).to eq(:budget_spent)
+    end
+  end
+end
