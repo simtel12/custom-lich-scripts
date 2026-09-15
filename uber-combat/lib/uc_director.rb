@@ -168,6 +168,100 @@ module UberCombat
     # empty would be a surprise, not a rescue.
     SAFETY_STOPS = [:dead, :health, :spirit].freeze
 
+    # ------------------------------------------------------------- plugins
+    #
+    # The plugin system, in the shape the dr-scripts wiki page
+    # "Implementing a Plugin System" describes and combat-trainer.lic and
+    # hunting-buddy.lic already ship. See:
+    # https://github.com/elanthia-online/dr-scripts/wiki/Implementing-a-Plugin-System
+    #
+    # A plugin is any object with one or more hook methods. uc-director.lic
+    # loads scripts/custom/uc-director-plugin-*.rb in sorted order, and each
+    # file calls UcDirector.register_plugin(instance), which lands here.
+    #
+    # CLASS-LEVEL DISPATCH, per the wiki's section 4 rule: the hooks are fired
+    # by Session, which holds no reference to the UcDirector host. The host
+    # reaches Session through the `host:` keyword instead, and every hook
+    # receives it as its first argument.
+    #
+    # THE HOOK CATALOG. Nothing else fires. A decision hook's :break stops the
+    # run with the reason :plugin_break, which is NOT a safety stop.
+    #
+    #   after_initialize(host)                        notify   UcDirector#initialize
+    #   before_run(host, budget:, unit:)              notify   start of Session#run
+    #   itinerary_built(host, itinerary:, cycle:)     notify   every build and rebuild
+    #   before_stint(host, leg_index:, leg:)          decision after :leg_selected,
+    #                                                          before the overlay write
+    #   after_stint(host, stint:, leg_index:, leg:)   decision after the post-stint
+    #                                                          snapshot and the record
+    #   after_run(host, reason:, stints:)             notify   after the :stopped announce
+    #   cleanup(host)                                 notify   uc-director.lic before_dying
+    #
+    # THE HOST DOES NOT TIME OUT A HOOK. A plugin that starts a script must
+    # bound it itself with Script.run_child(name, timeout:).
+    #
+    # `||=`, NOT `=`. Every uc-* script `load`s its libs, so a plain assignment
+    # would empty the registry of a director that is already running the moment
+    # anything else loads this file. The loader in uc-director.lic clears the
+    # registry itself before it loads the plugin files.
+    @registered_plugins ||= []
+    @plugin_error_handler ||= nil
+
+    class << self
+      # @return [Array<Object>] plugin instances, in registration order.
+      attr_reader :registered_plugins
+
+      # A callable taking (plugin, hook_name, error), or nil to swallow
+      # silently. The pure core cannot echo, so the adapter installs one that
+      # echoes under $debug_mode_ucdirector.
+      attr_accessor :plugin_error_handler
+
+      def register_plugin(plugin)
+        @registered_plugins << plugin
+      end
+
+      # Decision dispatch. Returns the FIRST non-nil answer and stops polling.
+      # false IS an answer, so callers must test .nil?, never truthiness.
+      def fire_hook(hook_name, *args, **kwargs)
+        registered_plugins.each do |plugin|
+          next unless plugin.respond_to?(hook_name)
+
+          begin
+            result = plugin.send(hook_name, *args, **kwargs)
+            return result unless result.nil?
+          rescue StandardError => e
+            report_plugin_error(plugin, hook_name, e)
+          end
+        end
+        nil
+      end
+
+      # Notification dispatch. Every implementing plugin runs; returns are
+      # ignored.
+      def notify_hook(hook_name, *args, **kwargs)
+        registered_plugins.each do |plugin|
+          next unless plugin.respond_to?(hook_name)
+
+          begin
+            plugin.send(hook_name, *args, **kwargs)
+          rescue StandardError => e
+            report_plugin_error(plugin, hook_name, e)
+          end
+        end
+        nil
+      end
+
+      private
+
+      # The handler itself is guarded too: a broken reporter must not turn one
+      # swallowed plugin error into a crashed run.
+      def report_plugin_error(plugin, hook_name, error)
+        plugin_error_handler&.call(plugin, hook_name, error)
+      rescue StandardError
+        nil
+      end
+    end
+
     # The return shape of world.run_stint, built by the ADAPTER so the pure
     # core never sees a Script object (spec section 3.2). It is declared here
     # rather than in uc-director.lic for the reason every other shared shape
@@ -426,7 +520,7 @@ module UberCombat
     class Session
       # stopped: the Symbol the run ended on. :budget_spent, :no_legs,
       #   :all_legs_refused, :launch_refused, :foreign_file, :write_error,
-      #   :overlay_error, or one of SAFETY_STOPS.
+      #   :overlay_error, :plugin_break, or one of SAFETY_STOPS.
       # detail: world.abort_detail at the moment the run ended, for the
       #   report. nil unless the safety ladder tripped.
       # stints: every Stint measured, in order. ALWAYS returned, even on an
@@ -453,9 +547,13 @@ module UberCombat
       # minutes instead of hours. The stint TIMEOUT deliberately does not
       # shrink with it -- it bounds the untimed travel and restock around the
       # hunt, and those cost the same at five minutes as at fifty.
+      # host: the object every plugin hook receives first. uc-director.lic
+      # passes its UcDirector, so a plugin can reach $UC_DIRECTOR's world.
+      # Defaults to the session itself, which is what the specs use.
       def initialize(world, barren_limit: BARREN_LIMIT, stint_cap: MAX_STINTS_PER_LEG,
-                     duration_minutes: DURATION_MINUTES)
+                     duration_minutes: DURATION_MINUTES, host: nil)
         @world = world
+        @host = host || self
         @barren_limit = barren_limit
         @stint_cap = stint_cap
         @duration_minutes = duration_minutes || DURATION_MINUTES
@@ -481,7 +579,8 @@ module UberCombat
         productive = 0
         cycles = 0
         stopped = nil
-        itinerary = @world.build_itinerary
+        Director.notify_hook(:before_run, @host, budget: budget, unit: unit)
+        itinerary = build_itinerary(cycles)
         return finish(:no_legs, [], 0) if itinerary.legs.empty?
 
         index    = 0
@@ -518,6 +617,14 @@ module UberCombat
           timeout = Director.timeout_for(@duration_minutes)
           @world.announce(:leg_selected, leg_index: index, count: itinerary.legs.size, leg: leg,
                                          duration: @duration_minutes, timeout: timeout)
+
+          # Before the write, so a plugin that stops the run never leaves a
+          # fresh overlay behind for a hunt that will not happen.
+          if Director.fire_hook(:before_stint, @host, leg_index: index, leg: leg) == :break
+            stopped = :plugin_break
+            @world.announce(:plugin_break, hook: :before_stint, leg_index: index, leg: leg)
+            break
+          end
 
           write = write_overlay(leg)
           case write.first
@@ -568,6 +675,20 @@ module UberCombat
             break
           end
 
+          # AFTER the launch_refused stop, because that stop means something
+          # else drives the character, and a town trip would fight it. AFTER
+          # the snapshot, because mindstate drains while a plugin works. Fired
+          # for every other classification: a timed-out or failed stint can
+          # still come home carrying loot.
+          if Director.fire_hook(:after_stint, @host, stint: stint, leg_index: index, leg: leg) == :break
+            # The stint already happened. Count it, or the report under-states
+            # the hunting that was done.
+            productive += 1 if stint.classification == :productive
+            stopped = :plugin_break
+            @world.announce(:plugin_break, hook: :after_stint, leg_index: index, leg: leg)
+            break
+          end
+
           unless stint.classification == :productive
             failures[index] += 1
             if failures[index] >= MAX_LEG_FAILURES
@@ -610,7 +731,7 @@ module UberCombat
             # throw away the cycle position on every advance.
             if index.zero?
               cycles += 1
-              itinerary = @world.build_itinerary
+              itinerary = build_itinerary(cycles)
               if itinerary.legs.empty?
                 stopped = :no_legs
                 break
@@ -625,7 +746,7 @@ module UberCombat
               leg_stints = Hash.new(0)
             end
           when :reselect
-            itinerary = @world.build_itinerary
+            itinerary = build_itinerary(cycles)
             if itinerary.legs.empty?
               stopped = :no_legs
               break
@@ -654,6 +775,15 @@ module UberCombat
       # the loop reads as one step per state-table row (spec section 2.3).
       def next_playable(index, itinerary, refused)
         Director.next_playable(index, itinerary.legs.size, refused)
+      end
+
+      # Every build goes through here, so itinerary_built can never miss one.
+      # cycle is the count of COMPLETED passes: 0 for the first build, and the
+      # same value for a :reselect rebuild inside a pass.
+      def build_itinerary(cycles)
+        itinerary = @world.build_itinerary
+        Director.notify_hook(:itinerary_built, @host, itinerary: itinerary, cycle: cycles)
+        itinerary
       end
 
       # The only place in the pure core that calls two world methods in
@@ -699,6 +829,7 @@ module UberCombat
       def finish(reason, stints, productive)
         detail = @world.abort_detail
         @world.announce(:stopped, reason: reason, detail: detail, stints: stints)
+        Director.notify_hook(:after_run, @host, reason: reason, stints: stints)
         Outcome.new(stopped: reason, detail: detail, stints: stints, productive: productive)
       end
     end

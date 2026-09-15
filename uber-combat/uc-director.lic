@@ -505,6 +505,7 @@ class DirectorWorld
     when :stint_ended then render_stint_ended(data)
     when :verdict then render_verdict(data)
     when :stopped then render_stopped(data)
+    when :plugin_break then render_plugin_break(data)
     else
       DRC.message(format('uc-director: unhandled event %s %s', event, data.inspect))
     end
@@ -812,8 +813,18 @@ class DirectorWorld
     end
   end
 
+  # A plugin prints its own reason before it answers :break. This line only
+  # says WHERE the run was stopped, so the two messages read as one story.
+  def render_plugin_break(data)
+    DRC.message(format('uc-director: a plugin stopped the run at %s (leg %d).',
+                       data[:hook], data[:leg_index].to_i + 1))
+  end
+
   def render_stop_advice(reason)
     case reason
+    when :plugin_break
+      DRC.message('  A plugin answered :break. Its own message above says why.', false)
+      DRC.message('  This is not a safety stop, so gosafe did not run.', false)
     when :no_legs
       DRC.message('  The picker returned no legs at all. The reasons are listed above:', false)
       DRC.message('  each unplaced skill names the FIRST stage that emptied its zone set.', false)
@@ -895,11 +906,68 @@ class UcDirector
   # SECOND global because before_dying clears that handle, and a report that
   # vanished the moment the run finished would be no report at all.
 
+  # ------------------------------------------------------------- plugins
+  #
+  # The host half of the plugin system. The registry and both dispatchers
+  # live in lib/uc_director.rb, where Session fires them, and the hook
+  # catalog is written there. See:
+  # https://github.com/elanthia-online/dr-scripts/wiki/Implementing-a-Plugin-System
+  #
+  # A plugin file is scripts/custom/uc-director-plugin-NAME.rb and ends with
+  #   UcDirector.register_plugin(MyPlugin.new)
+  PLUGIN_GLOB = 'uc-director-plugin-*.rb'
+
+  def self.register_plugin(plugin)
+    UberCombat::Director.register_plugin(plugin)
+  end
+
+  # Loads every plugin file, sorted, so registration order is filename order.
+  #
+  # CALLED ONLY FOR run AND cycles. Plan mode promises to write nothing and
+  # launch nothing, and a plugin's after_initialize could break that promise.
+  #
+  # The registry is CLEARED first. The lib uses `||=` so that another script
+  # loading it cannot empty a running director's registry, which means the
+  # registry would otherwise keep the previous run's plugin objects and every
+  # plugin would register twice.
+  #
+  # ScriptError AS WELL AS StandardError: a SyntaxError is not a
+  # StandardError, and without it one malformed plugin file kills the director
+  # at startup (wiki section 10).
+  def self.load_plugins
+    UberCombat::Director.registered_plugins.clear
+    UberCombat::Director.plugin_error_handler = lambda do |plugin, hook_name, error|
+      next unless $debug_mode_ucdirector
+
+      echo "Plugin #{plugin.class.name} error in #{hook_name}: #{error.message}"
+    end
+
+    Dir.glob(File.join(SCRIPT_DIR, 'custom', PLUGIN_GLOB)).sort.each do |plugin_file|
+      load plugin_file
+    rescue ScriptError, StandardError => e
+      DRC.message("uc-director: failed to load plugin #{File.basename(plugin_file)}: #{e.message}")
+    end
+  end
+
   # Reachable through $UC_DIRECTOR for ;e inspection while a run is going.
   attr_reader :world
 
   def initialize
     @world = nil
+    UberCombat::Director.notify_hook(:after_initialize, self)
+  end
+
+  # Unknown calls on $UC_DIRECTOR go to the first plugin that answers them, so
+  # another script can drive a plugin through the global handle.
+  def method_missing(method_name, *args, **kwargs, &block)
+    UberCombat::Director.registered_plugins.each do |plugin|
+      return plugin.send(method_name, *args, **kwargs, &block) if plugin.respond_to?(method_name)
+    end
+    super
+  end
+
+  def respond_to_missing?(method_name, include_private = false)
+    UberCombat::Director.registered_plugins.any? { |plugin| plugin.respond_to?(method_name) } || super
   end
 
   # PLAN ONLY. Issues no game command, walks nowhere, launches nothing, and
@@ -937,11 +1005,17 @@ class UcDirector
     # registered child, so __stop_children (script.rb:2052, :2288-2310) tears
     # it down on any kill, and during shutdown the process-wide drain owns
     # every script.
+    #
+    # cleanup is the one plugin hook in here. It is a notification, and each
+    # plugin call is rescued by the dispatcher, so a broken plugin cannot stop
+    # the overlay removal after it.
     before_dying do
+      UberCombat::Director.notify_hook(:cleanup, self)
       world.remove_overlay
       $UC_DIRECTOR = nil
     end
     $UC_DIRECTOR = self
+    report_plugins
 
     @unit = unit
     # "%d hunt(s)", not "budget %d". The old wording invited reading the
@@ -960,7 +1034,7 @@ class UcDirector
     DRC.message('  A stint that never reached the hunt loop does not spend the budget.', false)
     DRC.message('  ;p uc-director takes effect at the next cycle, not mid-stint.', false)
 
-    session = UberCombat::Director::Session.new(world, duration_minutes: duration_minutes)
+    session = UberCombat::Director::Session.new(world, duration_minutes: duration_minutes, host: self)
     session.run(budget, unit: @unit)
     record_run(world)
   end
@@ -1006,6 +1080,15 @@ class UcDirector
     @duration_minutes ||=
       UberCombat::LegSettings.hunt_duration_minutes(get_settings) ||
       UberCombat::Director::DURATION_MINUTES
+  end
+
+  # ALWAYS printed, even when the list is empty. A hook error is silent unless
+  # $debug_mode_ucdirector is set, so this line is the only place a missing or
+  # unloadable plugin file shows. The town plugin is what sells loot; a run
+  # without it must say so.
+  def report_plugins
+    names = UberCombat::Director.registered_plugins.map { |plugin| plugin.class.name }
+    DRC.message(format('  plugins: %s', names.empty? ? 'none' : names.join(', ')), false)
   end
 
   def banner
@@ -1114,6 +1197,13 @@ end
 # No argument is the read-only plan -- the case that must never change.
 mode = script.vars[1]
 
+# The registry is process-wide and survives this script exiting, so a run
+# earlier in this Lich session leaves its plugins registered. Clear it for
+# EVERY mode, or plan mode would fire after_initialize on a stale plugin.
+# Safe: Lich refuses a second uc-director while one runs, and no other script
+# registers director plugins.
+UberCombat::Director.registered_plugins.clear
+
 case mode
 when nil
   UcDirector.new.plan
@@ -1134,6 +1224,7 @@ when /\Arun\z/i
     DRC.message('  ;uc-director run 4 means four hunts, not leg 4.', false)
     DRC.message('  There is no unbounded mode. One stint is half an hour of unattended combat.', false)
   else
+    UcDirector.load_plugins
     UcDirector.new.run(budget.to_i)
   end
 when /\Acycles?\z/i
@@ -1149,6 +1240,7 @@ when /\Acycles?\z/i
     DRC.message('  Use it when you mean "go round once" rather than "run this many hunts".', false)
     DRC.message('  There is no unbounded mode. One leg is half an hour of unattended combat.', false)
   else
+    UcDirector.load_plugins
     UcDirector.new.run(count.to_i, unit: :cycles)
   end
 when /\Areport\z/i
