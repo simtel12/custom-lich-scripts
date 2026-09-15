@@ -47,10 +47,25 @@ RSpec.describe "the .lic scripts" do
     source.scan(/load File\.join\(lib_dir, '([a-z_]+)\.rb'\)/).flatten
   end
 
-  scripts = Dir[File.join(subproject_root, "*.lic")].sort
+  # Director plugin files are in scope for the same reason. uc-director.lic
+  # `load`s them at runtime, and each one names its own libs.
+  plugins = Dir[File.join(subproject_root, "uc-director-plugin-*.rb")].sort
+  scripts = Dir[File.join(subproject_root, "*.lic")].sort + plugins
 
   it "finds scripts to check, so an empty glob cannot pass silently" do
     expect(scripts).not_to be_empty
+  end
+
+  it "finds the town plugin, so a renamed plugin cannot drop out of the guard" do
+    expect(plugins.map { |path| File.basename(path) }).to include("uc-director-plugin-town.rb")
+  end
+
+  # uc-director.lic loads plugins by this glob. A plugin file that does not
+  # match it is never loaded, and nothing else would say so.
+  plugins.each do |path|
+    it "#{File.basename(path)} registers itself with UcDirector" do
+      expect(File.read(path)).to match(/^UcDirector\.register_plugin\(/)
+    end
   end
 
   scripts.each do |path|
