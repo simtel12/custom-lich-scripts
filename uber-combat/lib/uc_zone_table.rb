@@ -235,6 +235,24 @@ module UberCombat
       nil
     end
 
+    # A living creature: neither a construct nor an undead. The necromancer
+    # predicate, because Thanatology cannot be learned from an undead or a
+    # construct (user, 2026-09-15).
+    #
+    # The exact inverse of construct_or_undead, including the unknown: true
+    # only when BOTH flags are known false, false when either is true, nil
+    # otherwise. Kept as its own name rather than left to callers as
+    # `construct_or_undead == false`, because that spelling is one keystroke
+    # from `!construct_or_undead`, which turns every unknown into a living
+    # creature.
+    #
+    # Cursed is not the opposite of living. |Evil=cursed is an alignment on a
+    # living creature, and 34 cursed creatures are living.
+    def living
+      c = construct_or_undead
+      c.nil? ? nil : !c
+    end
+
     # Did anyone read a {{Critter}} infobox for this creature at all? False for
     # the 20 records whose page is missing or carries no infobox.
     def flags_known?
@@ -273,7 +291,8 @@ module UberCombat
   module CritterFlags
     QUALIFYING = { "skinnable" => :skinnable, "drops_boxes" => :drops_boxes,
                    "cursed" => :cursed, "construct" => :construct,
-                   "undead" => :undead, "corporeal" => :corporeal }.freeze
+                   "undead" => :undead, "corporeal" => :corporeal,
+                   "living" => :living }.freeze
 
     # Every creature on this zone's roster, as Critter readers. Resolved through
     # critter_refs, never by bare noun: 13 nouns map to 2 or 3 records.
@@ -317,6 +336,25 @@ module UberCombat
       return false if roster.empty?
 
       roster.all? { |critter| critter.construct_or_undead == true }
+    end
+
+    # The necromancer gate. EVERY creature in the zone must be living, because
+    # Thanatology cannot be learned from an undead or a construct, and
+    # combat-trainer offers no way to fight half a room (43-critter-enrichment.md,
+    # Finding 1). A zone holding one undead is a zone where part of every stint
+    # teaches nothing.
+    #
+    # Fails an unknown and an empty roster, as the other gates do. 224 zones
+    # pass. It can never agree with all_construct_or_undead? on a non-empty
+    # roster, so no zone serves both an empath and a necromancer.
+    #
+    # Like the empath gate this is the GUILD axis only. A necromancer is no
+    # cleric, so all_corporeal? applies on top, and 4 living zones fail it.
+    def all_living?(zone)
+      roster = critters_in(zone)
+      return false if roster.empty?
+
+      roster.all? { |critter| critter.living == true }
     end
 
     # Is every creature here one an ordinary weapon can touch?

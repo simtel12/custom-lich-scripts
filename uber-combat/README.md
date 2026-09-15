@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-517 examples, about 5 seconds, no game needed.
+535 examples, about 5 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -322,11 +322,18 @@ intersection, which is **59** zones rather than 75. Neither flag substitutes
 for the other: undeath does not imply incorporeality, and an emaciated
 umbramagus is incorporeal without being undead.
 
+**Necromancers need living creatures only.** Thanatology cannot be learned
+from an undead or a construct. `Critter#living` is the inverse of
+`construct_or_undead`, and it stays nil when either flag is unknown. Do not
+write `!construct_or_undead`, because that turns every unknown into a living
+creature. `ZoneTable#all_living?` admits 224 zones, or 220 with the corporeal
+gate, since a necromancer is no cleric. No zone passes both the empath gate and
+the necromancer gate.
+
 The zone rollups (`qualifying_ratio`, `flag_census`, `all_construct_or_undead?`,
-`all_corporeal?`, `any_loot?`) are computed at load time and never stored, per
-the data file's own rule. They put 293 zones in `normal`, 190 in `skin`, 140 in
-`lockpick`, 31 in `cleric` and 75 in `empath`. `necro` still needs
-`ritual_eligible`, which the wiki does not carry.
+`all_living?`, `all_corporeal?`, `any_loot?`) are computed at load time and
+never stored, per the data file's own rule. They put 293 zones in `normal`, 190
+in `skin`, 140 in `lockpick`, 31 in `cleric`, 75 in `empath` and 224 in `necro`.
 
 Nothing consumes these yet. The picker, the overlay and the director are
 unchanged; `43-critter-enrichment.md` proposes what should consume them.

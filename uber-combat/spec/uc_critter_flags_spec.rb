@@ -125,6 +125,36 @@ RSpec.describe UberCombat::Critter do
     end
   end
 
+  # Thanatology cannot be learned from an undead or a construct, so a
+  # necromancer wants living creatures only.
+  describe "#living" do
+    it "is true when the creature is known to be neither" do
+      expect(critter("construct" => false, "undead" => false).living).to be(true)
+    end
+
+    it "is false for an undead" do
+      expect(critter("construct" => false, "undead" => true).living).to be(false)
+    end
+
+    it "is false for a construct" do
+      expect(critter("construct" => true, "undead" => false).living).to be(false)
+    end
+
+    # The trap this reader exists to close: `!construct_or_undead` turns this
+    # nil into true and sends a necromancer at something unchecked.
+    it "is nil when the alignment is unknown" do
+      expect(critter("construct" => false).living).to be_nil
+    end
+
+    it "is false for a construct even when the alignment is unknown" do
+      expect(critter("construct" => true).living).to be(false)
+    end
+
+    it "counts a cursed creature as living" do
+      expect(critter("construct" => false, "undead" => false, "cursed" => true).living).to be(true)
+    end
+  end
+
   describe "provenance" do
     it "knows when an infobox was actually read" do
       c = critter("provenance" => { "flags" => "elanthipedia_critter_infobox" })
@@ -256,6 +286,50 @@ RSpec.describe UberCombat::CritterFlags do
       table, zone = table_with({}, {})
 
       expect(table.all_construct_or_undead?(zone)).to be(false)
+    end
+  end
+
+  describe "#all_living?" do
+    let(:alive) { { "construct" => false, "undead" => false } }
+
+    it "admits a roster of living creatures" do
+      table, zone = table_with({ "A" => alive, "B" => alive }, { "a" => "A", "b" => "B" })
+
+      expect(table.all_living?(zone)).to be(true)
+    end
+
+    # Combat-trainer cannot fight half a room, so one undead in the roster
+    # means part of every stint teaches no Thanatology.
+    it "refuses a roster holding one undead" do
+      table, zone = table_with({ "A" => alive, "B" => { "construct" => false, "undead" => true } },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_living?(zone)).to be(false)
+    end
+
+    it "refuses a roster holding one construct" do
+      table, zone = table_with({ "A" => alive, "B" => { "construct" => true } }, { "a" => "A", "b" => "B" })
+
+      expect(table.all_living?(zone)).to be(false)
+    end
+
+    it "refuses a roster holding one unknown creature" do
+      table, zone = table_with({ "A" => alive, "B" => {} }, { "a" => "A", "b" => "B" })
+
+      expect(table.all_living?(zone)).to be(false)
+    end
+
+    it "refuses an empty roster" do
+      table, zone = table_with({}, {})
+
+      expect(table.all_living?(zone)).to be(false)
+    end
+
+    it "is available as a ratio too" do
+      table, zone = table_with({ "A" => alive, "B" => { "undead" => true, "construct" => false } },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.qualifying_ratio(zone, "living")).to eq(0.5)
     end
   end
 
@@ -458,6 +532,14 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
   # No construct is incorporeal. That is what makes a hand-verified
   # corporeal: true on the construct pages missing the field a low-risk
   # correction rather than a guess.
+  it "counts living as 211 true, 73 false, 22 unknown" do
+    expect(tally(:living)).to eq([211, 73, 22])
+  end
+
+  it "counts 34 cursed creatures as living" do
+    expect(records.count { |r| r.cursed == true && r.living == true }).to eq(34)
+  end
+
   it "records no incorporeal construct at all" do
     expect(records.count { |r| r.construct == true && r.corporeal == false }).to eq(0)
   end
@@ -524,6 +606,47 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
 
       expect([lost.size, unknown_only.map(&:key).sort])
         .to eq([16, %w[clay_slayer clay_slayer_fibrous clay_slayer_glazed snippets]])
+    end
+
+    # The necromancer gate: Thanatology is not learned from undead or
+    # constructs. The 139 it refuses break down as 79 holding a known undead
+    # or construct, 29 with no roster, and 31 refused only on an unknown --
+    # nearly all of those are zones whose creature page is missing or a
+    # disambiguation stub.
+    it "finds 224 zones a necromancer can learn Thanatology in" do
+      refused = table.zones.reject { |zone| table.all_living?(zone) }
+      known = refused.count { |zone| table.critters_in(zone).any? { |c| c.living == false } }
+      no_roster = refused.count { |zone| zone.critter_refs.empty? }
+
+      expect([table.zones.size - refused.size, known, no_roster, refused.size - known - no_roster])
+        .to eq([224, 79, 29, 31])
+    end
+
+    # A necromancer is no cleric either, so the capability gate applies on top.
+    # The 4 zones it removes hold the 3 incorporeal creatures that are living.
+    it "leaves a necromancer 220 zones once the corporeal gate is applied too" do
+      living = table.zones.select { |zone| table.all_living?(zone) }
+      lost = living.reject { |zone| table.all_corporeal?(zone) }
+
+      expect([living.size - lost.size, lost.map(&:key).sort])
+        .to eq([220, %w[moss_meys moss_meys_leth shadow_master umbramagus]])
+    end
+
+    it "never serves an empath and a necromancer from the same zone" do
+      both = table.zones.select { |zone| table.all_living?(zone) && table.all_construct_or_undead?(zone) }
+
+      expect(both).to eq([])
+    end
+
+    # Only 4 zones actually mix living and unliving creatures. They are the
+    # zones neither guild gate can use, whatever else is true of them.
+    it "finds 4 zones that mix living and unliving creatures" do
+      mixed = table.zones.select do |zone|
+        roster = table.critters_in(zone)
+        roster.any? { |c| c.living == true } && roster.any? { |c| c.living == false }
+      end
+
+      expect(mixed.map(&:key).sort).to eq(%w[bone_wolves cougars_vineyard greater_sluagh reavers])
     end
 
     it "finds 293 zones with something worth looting" do
