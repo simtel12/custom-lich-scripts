@@ -97,6 +97,7 @@ load File.join(lib_dir, 'uc_character.rb')
 load File.join(lib_dir, 'uc_zone_table.rb')
 load File.join(lib_dir, 'uc_zone_picker.rb')
 load File.join(lib_dir, 'uc_zone_distance.rb')
+load File.join(lib_dir, 'uc_ferry.rb')
 load File.join(lib_dir, 'uc_leg_overlay.rb')
 load File.join(lib_dir, 'uc_leg_settings.rb')
 load File.join(lib_dir, 'uc_leg_writer.rb')
@@ -183,6 +184,13 @@ class DirectorWorld
     refuse_bad_creature_flags(settings)
     warn_about_max_skills(settings)
     warn_about_duration(settings)
+    # One search per room serves the distance ranking AND the ferry check,
+    # which reads the route to the same room off that search's tree. The
+    # ferry line is INFORMATIONAL: it never changes a pick, a verdict or a
+    # timeout.
+    distance = UberCombat::ZoneDistance.live
+    @ferries = UberCombat::Ferry::ZoneRoutes.new(distance, settings: settings,
+                                                           on_error: method(:report_ferry_error))
     @picker = UberCombat::ZonePicker.new(
       @character, @zone_table,
       UberCombat::LegSettings.premium(settings),
@@ -190,7 +198,8 @@ class DirectorWorld
       max_skills_per_leg: UberCombat::LegSettings.max_skills_per_leg(settings),
       trainable_skills: UberCombat::LegSettings.trainable_skills(settings),
       creature_flags: UberCombat::LegSettings.require_creature_flags(settings),
-      distance: UberCombat::ZoneDistance.live
+      distance: distance,
+      ferries: @ferries
     )
     @overlay_engine = UberCombat::LegOverlay.new(
       @character,
@@ -760,10 +769,12 @@ class DirectorWorld
       return
     end
 
+    ferries = Array(itinerary.ferry_crossings).to_h { |record| [record[:zone_key], record[:detail][:crossings]] }
     itinerary.legs.each_with_index do |leg, index|
       DRC.message(format('  Leg %d: %s', index + 1, leg[:skills].join(', ')), false)
       DRC.message(format('    zone=%-24s distance=%-8s stance=%-12s', leg[:zone_key],
                          UberCombat::ZoneDistance.label(leg[:distance]), leg[:stance][:policy]), false)
+      render_ferry(ferries[leg[:zone_key]], '    ')
     end
     render_unplaced(itinerary.unplaced)
     render_unresolved_premium(itinerary.unresolved_premium)
@@ -800,6 +811,27 @@ class DirectorWorld
                        Array(data[:leg][:skills]).join(', ')))
     DRC.message(format('  zone=%s  duration=%d min  timeout=%d s',
                        data[:leg][:zone_key], data[:duration].to_i, data[:timeout].to_i), false)
+    # Asked again here rather than read off the itinerary: the itinerary may
+    # have been built a town trip ago, and this is the route from where the
+    # character stands as the stint starts. Same room as the build, usually,
+    # and then the search is already cached.
+    render_ferry(@ferries.call(data[:leg][:zone_key]), '  ')
+  end
+
+  # INFORMATIONAL, and the same line uc-zones and uc-leg print. A ferry does
+  # not change the pick; it explains a slow stint. Nothing for a dry route.
+  def render_ferry(crossings, indent)
+    return if crossings.nil? || crossings.empty?
+
+    DRC.message(format('%sferry=%s  (bescort waits for it; the leg pays this each way)',
+                       indent, crossings.map(&:to_s).join(', ')), false)
+  end
+
+  # The ferry check never raises into the picker or the loop; it lands here
+  # and the leg is reported as having no ferry.
+  def report_ferry_error(zone_key, error)
+    DRC.message(format('uc-director: ferry check for %s failed (%s: %s); reporting none.',
+                       zone_key, error.class, error.message))
   end
 
   # A :gaps refusal takes this leg out for the rest of the run: retrying

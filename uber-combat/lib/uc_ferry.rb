@@ -352,5 +352,60 @@ module UberCombat
         @settings ||= get_settings
       end
     end
+
+    # zone key -> Array<Crossing> of the ferries on the route to that zone,
+    # from where the character stands now. The picker's `ferries:` seam for
+    # uc-leg and uc-director, and what uc-director asks again when it selects
+    # a leg mid-run.
+    #
+    # BUILT ON ZoneDistance::Live, NOT BESIDE IT, for two reasons. The route
+    # is reconstructed from the same Dijkstra the distance came from, so a
+    # report costs no second search. And the room is the one ZoneDistance
+    # measured: a zone's rooms can sit on both sides of a river, and naming
+    # the ferry to a room the picker did not rank the zone by would describe
+    # a trip the hunt never makes.
+    #
+    # DETECTION ONLY, like everything in this file. It never raises: a lookup
+    # that failed answers [] and reports the error through on_error, because
+    # the picker calls this inside build_itinerary and an informational line
+    # must never be the thing that stops an itinerary.
+    class ZoneRoutes
+      # distance: a ZoneDistance::Live, or anything answering #survey.
+      # map/skills/settings: passed through to LiveMap; nil means the live
+      #   globals. on_error: callable (zone_key, error), or nil to swallow.
+      def initialize(distance, map: nil, skills: nil, settings: nil, on_error: nil)
+        @distance = distance
+        @live_map_options = { map: map, skills: skills, settings: settings }
+        @on_error = on_error
+        @survey = nil
+        @live_map = nil
+      end
+
+      def call(zone_key)
+        survey = @distance.survey
+        return [] if survey.nil? || survey.previous.nil?
+
+        nearest = survey.nearest_room(zone_key)
+        return [] if nearest.nil?
+
+        live_map_for(survey).ferries(survey.origin, nearest.first) || []
+      rescue StandardError => e
+        @on_error&.call(zone_key, e)
+        []
+      end
+
+      private
+
+      # One LiveMap per survey. LiveMap memoises routes by room pair, and a
+      # route read off one room's tree must not be served once the character
+      # has moved and the tree has been replaced.
+      def live_map_for(survey)
+        return @live_map if @survey.equal?(survey)
+
+        @survey = survey
+        findpath = ->(from, to) { LiveMap.path_from(survey.previous, from, to) }
+        @live_map = LiveMap.new(**@live_map_options, findpath: findpath)
+      end
+    end
   end
 end

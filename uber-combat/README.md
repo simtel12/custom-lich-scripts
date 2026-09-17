@@ -58,10 +58,23 @@ must never change anything.
 
 ### Ferries
 
-`uc-zones` and `uc-probe` both name the crossings on the route to a zone.
-A `FERRY` column on a candidate row, a `ferry=` line under an itinerary leg,
-and a `crossings:` key in a probe record all mean the same thing: getting there
-puts the character on a boat and the trip pays a wait for it, out and back.
+`uc-zones`, `uc-leg`, `uc-director` and `uc-probe` all name the crossings on
+the route to a zone. A `FERRY` column on a candidate row, a `ferry=` line under
+an itinerary leg, and a `crossings:` key in a probe record all mean the same
+thing: getting there puts the character on a boat and the trip pays a wait for
+it, out and back.
+
+`uc-leg` prints the `ferry=` line under each itinerary leg and again for the leg
+`write N` or `go N` acts on. `uc-director` prints it under each leg of the plan
+itinerary, and again under the status line when a run selects a leg. That
+second one is checked from where the character stands as the stint starts, not
+from where the itinerary was built.
+
+`uc-leg` and `uc-director` read the route off the same Dijkstra search the
+distance preference ranks zones by (`Ferry::ZoneRoutes` over
+`ZoneDistance::Live`), so the ferry named is on the route to the very room the
+zone was measured to, and it costs no second search. A ferry check that fails
+prints one line and reports no ferry; it never stops an itinerary or a run.
 
 This is DETECTION ONLY. Nothing excludes a zone, reorders a candidate or
 changes a verdict on it. It exists because `DIST` is Dijkstra seconds and a
@@ -97,7 +110,7 @@ bundle install
 rspec
 ```
 
-694 examples, about 6 seconds, no game needed.
+706 examples, about 6 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only

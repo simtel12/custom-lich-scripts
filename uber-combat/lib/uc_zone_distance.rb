@@ -15,15 +15,30 @@ module UberCombat
     # distances: Hash of room id => travel cost, as Room#dijkstra returns its
     # second element (map_base.rb:774). rooms_for: callable, zone key =>
     # Array of room ids for that zone.
-    def initialize(distances, rooms_for)
+    # previous: the FIRST element of the same Room#dijkstra, and origin: the
+    # room it was run from. Both optional, and kept only so another lookup can
+    # reconstruct the route to the room this one measured without searching
+    # again (Ferry::ZoneRoutes does).
+    def initialize(distances, rooms_for, previous: nil, origin: nil)
       @distances = distances
       @rooms_for = rooms_for
+      @previous = previous
+      @origin = origin
     end
+
+    attr_reader :previous, :origin
 
     # The cost to the zone's nearest reachable room, or nil when no room of
     # the zone is reachable from here.
     def call(zone_key)
-      @rooms_for.call(zone_key).filter_map { |id| @distances[id] }.min
+      nearest_room(zone_key)&.last
+    end
+
+    # [room_id, cost] for the zone's nearest reachable room, or nil. The room
+    # is the one the distance was measured to, so a report about the ROUTE to
+    # a zone can ask about the same room the picker ranked it by.
+    def nearest_room(zone_key)
+      @rooms_for.call(zone_key).filter_map { |id| (cost = @distances[id]) && [id, cost] }.min_by(&:last)
     end
 
     # How a report prints a distance. 'unknown' covers both a zone with no
@@ -36,24 +51,42 @@ module UberCombat
     # TIME OF THE CALL, not the room they were in when this was built: the
     # director rebuilds its itinerary after walking to town and back, and a
     # distance measured from the start room would be stale by then.
-    #
-    # One Dijkstra run per room, reused for every zone asked about from it.
-    # Returns nil for every zone when the room is unknown, which leaves the
-    # picker on its band-width tie-break rather than stopping it.
     def self.live
-      rooms_for = rooms_lookup
-      cached_room = nil
-      cached = nil
-      lambda do |zone_key|
-        room = Room.current
-        next nil unless room
+      Live.new(rooms_lookup)
+    end
 
-        unless cached_room == room.id
-          cached_room = room.id
-          _previous, distances = room.dijkstra
-          cached = distances && new(distances, rooms_for)
+    # One Dijkstra run per room, reused for every zone asked about from it, and
+    # shared with anything else that asks for #survey (the ferry check).
+    # Answers nil for every zone when the room is unknown, which leaves the
+    # picker on its band-width tie-break rather than stopping it.
+    #
+    # current_room is injectable so the per-room caching is testable without
+    # Lich. The default is resolved late, so loading this file never touches
+    # Room.
+    class Live
+      def initialize(rooms_for, current_room: nil)
+        @rooms_for = rooms_for
+        @current_room = current_room || -> { Object.const_get(:Room).current }
+        @room_id = nil
+        @survey = nil
+      end
+
+      def call(zone_key)
+        survey&.call(zone_key)
+      end
+
+      # The ZoneDistance for the room the character stands in now, or nil when
+      # the room is unknown or the search failed.
+      def survey
+        room = @current_room.call
+        return nil unless room
+
+        unless @room_id == room.id
+          @room_id = room.id
+          previous, distances = room.dijkstra
+          @survey = distances && ZoneDistance.new(distances, @rooms_for, previous: previous, origin: room.id)
         end
-        cached&.call(zone_key)
+        @survey
       end
     end
 

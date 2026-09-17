@@ -288,4 +288,75 @@ RSpec.describe UberCombat::Ferry do
       expect(subject.flying_mount?).to be(false)
     end
   end
+
+  describe UberCombat::Ferry::ZoneRoutes do
+    # The same Crossing ferry route as above, but read off a Dijkstra tree run
+    # from the saferoom (8246), the way ZoneDistance::Live keeps it.
+    let(:map) do
+      FakeMap.new(
+        { 8246   => FakeMap::Room.new(8246, { "957" => "west", "5000" => "east" }),
+          957    => FakeMap::Room.new(957, { "1904" => FakeStringProc.new(CROSSING_FERRY[3..]) }),
+          1904   => FakeMap::Room.new(1904, { "10041" => "south" }),
+          10_041 => FakeMap::Room.new(10_041, {}),
+          5000   => FakeMap::Room.new(5000, {}) },
+        {}
+      )
+    end
+    let(:previous) { { 957 => 8246, 1904 => 957, 10_041 => 1904, 5000 => 8246 } }
+    let(:rooms) { { "leth_zone" => [10_041], "dry_zone" => [5000], "cut_off" => [77] } }
+    let(:distance_class) { Struct.new(:survey) }
+
+    def survey(previous_tree = previous)
+      UberCombat::ZoneDistance.new({ 10_041 => 60.0, 5000 => 5.0, 957 => 2.0, 1904 => 40.0 },
+                                   rooms.method(:fetch), previous: previous_tree, origin: 8246)
+    end
+
+    def routes(distance, on_error: nil)
+      described_class.new(distance, map: map, skills: FakeSkills.new({ "Athletics" => 50 }),
+                                    settings: FakeFerrySettings.new(nil), on_error: on_error)
+    end
+
+    it "names the ferry on the route to the zone's measured room" do
+      expect(routes(distance_class.new(survey)).call("leth_zone").map(&:to_s)).to eq(["ferry leth"])
+    end
+
+    it "answers [] for a zone reached without a boat" do
+      expect(routes(distance_class.new(survey)).call("dry_zone")).to eq([])
+    end
+
+    it "answers [] for a zone with no reachable room" do
+      expect(routes(distance_class.new(survey)).call("cut_off")).to eq([])
+    end
+
+    it "answers [] when there is no survey, or it kept no tree" do
+      expect(routes(distance_class.new(nil)).call("leth_zone")).to eq([])
+      expect(routes(distance_class.new(survey(nil))).call("leth_zone")).to eq([])
+    end
+
+    # The picker calls this inside build_itinerary. An informational line must
+    # never be what stops an itinerary.
+    it "answers [] and reports the error instead of raising" do
+      errors = []
+      broken = Object.new
+      def broken.survey = raise("no map")
+
+      result = routes(broken, on_error: ->(zone_key, error) { errors << [zone_key, error.message] })
+               .call("leth_zone")
+
+      expect(result).to eq([])
+      expect(errors).to eq([["leth_zone", "no map"]])
+    end
+
+    it "re-reads routes from a new tree once the survey is replaced" do
+      distance = distance_class.new(survey)
+      subject = routes(distance)
+      expect(subject.call("leth_zone")).not_to be_empty
+
+      # Same origin, but a tree in which the zone is reached another way.
+      distance.survey = survey(previous.merge(10_041 => 5000))
+      map[5000].wayto["10041"] = "north"
+
+      expect(subject.call("leth_zone")).to eq([])
+    end
+  end
 end
