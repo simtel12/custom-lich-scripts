@@ -78,8 +78,12 @@ module UberCombat
     # pass, or nil for none. LegSettings.require_creature_flags builds it. This
     # is how an empath is kept to constructs and undead, a necromancer to living
     # creatures, and a non-cleric away from incorporeal ones.
+    # distance: answers #call(zone_key) with the travel cost from where the
+    # character stands, or nil when the zone is unreachable. ZoneDistance.live
+    # builds it in game. Nil means no distance is known, and the picker then
+    # chooses among candidates by band width alone.
     def initialize(character, zone_table, premium = false, province: nil, max_skills_per_leg: nil,
-                   trainable_skills: nil, creature_flags: nil)
+                   trainable_skills: nil, creature_flags: nil, distance: nil)
       @character = character
       @zone_table = zone_table
       @premium = premium
@@ -87,6 +91,7 @@ module UberCombat
       @max_skills_per_leg = max_skills_per_leg || MAX_SKILLS_PER_LEG
       @trainable_skills = trainable_skills
       @creature_flags = creature_flags || []
+      @distance = distance
     end
 
     # nil means no restriction, so every existing caller and every test that
@@ -401,11 +406,15 @@ module UberCombat
     # a live function of the character's ranks, so the enactment layer calls
     # Character#stance_order(policy) when it writes @stances.
     #
-    # Narrowest band wins a tie. It wastes the least of the leg's rank room,
-    # which is consistent with the rule that there is no margin.
-    # The zone the leg will ACTUALLY hunt. Narrowest band wins a tie, because
-    # it wastes the least of the leg's rank room, which is consistent with
-    # there being no margin.
+    # The zone the leg will ACTUALLY hunt: the NEAREST candidate (user,
+    # 2026-09-15). Every candidate already admits every skill on the leg, so
+    # the one that differs is how far away it is, and travel is paid on every
+    # stint. Band width alone sent a character standing in Shard to Ratha.
+    #
+    # Narrowest band breaks a tie in distance, and decides outright when no
+    # distance is known. It wastes the least of the leg's rank room, which is
+    # consistent with there being no margin. A candidate with no known
+    # distance sorts after every reachable one.
     #
     # Extracted so assign_debilitation and present cannot disagree. They used
     # to: assign_debilitation asked whether ANY candidate admitted
@@ -416,13 +425,20 @@ module UberCombat
     # only one leg ever carried Debilitation and the first admitting leg
     # happened to be right; making it ride every admitting leg exposed it.
     def chosen_zone(leg)
-      leg[:zone_candidates].min_by { |candidate| candidate.rank_max - candidate.rank_min }
+      leg[:zone_candidates].min_by do |candidate|
+        [distance_to(candidate) || Float::INFINITY, candidate.rank_max - candidate.rank_min]
+      end
+    end
+
+    def distance_to(zone)
+      @distance&.call(zone.key)
     end
 
     def present(leg)
       zone = chosen_zone(leg)
       { skills: leg[:skills],
         zone_key: zone.key,
+        distance: distance_to(zone),
         stance: { policy: stance_for(zone), key: stance_key(leg[:skills]) },
         min_mana: nil }
     end
