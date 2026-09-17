@@ -92,6 +92,70 @@ RSpec.describe UberCombat::LegOverlay do
       expect(settings.key?("args")).to be false
       expect(settings["hunting_info"].first.key?("args")).to be false
     end
+
+    # combat-trainer's creature args, chosen from the leg's zone roster
+    # (user, 2026-09-17).
+    context "with a zone table" do
+      let(:critters) do
+        { "Undead" => { "undead" => true, "construct" => false },
+          "Construct" => { "construct" => true, "undead" => false },
+          "Both" => { "construct" => true, "undead" => true },
+          "Living" => { "construct" => false, "undead" => false } }
+      end
+
+      def zone(key, *critter_keys)
+        UberCombat::Zone.new(key, { "critter_refs" => critter_keys.to_h { |k| [k.downcase, k] } })
+      end
+
+      let(:zone_table) do
+        FakeZoneTable.new([zone("undead_zone", "Undead"), zone("construct_zone", "Construct"),
+                           zone("mixed_zone", "Undead", "Construct"), zone("both_zone", "Both"),
+                           zone("living_zone", "Living"), zone("unknown_zone"),
+                           zone("half_known_zone", "Construct", "Missing")],
+                          critters)
+      end
+
+      def args_for(zone_key)
+        leg = concentrated_leg.merge(zone_key: zone_key)
+        overlay(zone_table: zone_table).build(leg).settings["hunting_info"].first["args"]
+      end
+
+      it "passes undead when every creature in the zone is undead" do
+        expect(args_for("undead_zone")).to eq(["undead"])
+      end
+
+      it "passes construct when every creature in the zone is a construct" do
+        expect(args_for("construct_zone")).to eq(["construct"])
+      end
+
+      # `construct` would permit offense on the undead without Absolution.
+      it "passes neither for a zone that mixes constructs and undead" do
+        expect(args_for("mixed_zone")).to be_nil
+      end
+
+      # undead is the narrower permission: offense only while Absolution is up.
+      it "passes undead, not construct, for a creature flagged as both" do
+        expect(args_for("both_zone")).to eq(["undead"])
+      end
+
+      it "passes nothing for a living zone" do
+        expect(args_for("living_zone")).to be_nil
+      end
+
+      it "passes nothing for an empty roster or one unknown creature" do
+        expect([args_for("unknown_zone"), args_for("half_known_zone")]).to eq([nil, nil])
+      end
+
+      it "passes nothing for a zone key the table does not hold" do
+        expect(args_for("no_such_zone")).to be_nil
+      end
+
+      it "uses a String key, which is the one hunting-buddy.lic reads" do
+        entry = overlay(zone_table: zone_table).build(concentrated_leg.merge(zone_key: "undead_zone"))
+                                               .settings["hunting_info"].first
+        expect([entry.key?("args"), entry.key?(:args)]).to eq([true, false])
+      end
+    end
   end
 
   describe "weapon_training" do

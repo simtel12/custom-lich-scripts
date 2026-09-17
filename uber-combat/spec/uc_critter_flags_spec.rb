@@ -289,6 +289,64 @@ RSpec.describe UberCombat::CritterFlags do
     end
   end
 
+  describe "#all_construct?" do
+    it "admits a roster of constructs" do
+      table, zone = table_with({ "A" => yes(:construct), "B" => yes(:construct) },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_construct?(zone)).to be(true)
+    end
+
+    # `construct` switches an empath's offense on for every target, so an
+    # undead in the room must keep the arg off.
+    it "refuses a roster with one undead" do
+      table, zone = table_with({ "A" => yes(:construct), "B" => yes(:undead) },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_construct?(zone)).to be(false)
+    end
+
+    it "refuses a roster with one unknown creature" do
+      table, zone = table_with({ "A" => yes(:construct), "B" => {} }, { "a" => "A", "b" => "B" })
+
+      expect(table.all_construct?(zone)).to be(false)
+    end
+
+    it "refuses an empty roster" do
+      table, zone = table_with({}, {})
+
+      expect(table.all_construct?(zone)).to be(false)
+    end
+  end
+
+  describe "#all_undead?" do
+    it "admits a roster of undead" do
+      table, zone = table_with({ "A" => yes(:undead), "B" => yes(:undead) },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_undead?(zone)).to be(true)
+    end
+
+    it "refuses a roster with one construct" do
+      table, zone = table_with({ "A" => yes(:undead), "B" => yes(:construct) },
+                               { "a" => "A", "b" => "B" })
+
+      expect(table.all_undead?(zone)).to be(false)
+    end
+
+    it "refuses a roster with one unknown creature" do
+      table, zone = table_with({ "A" => yes(:undead), "B" => {} }, { "a" => "A", "b" => "B" })
+
+      expect(table.all_undead?(zone)).to be(false)
+    end
+
+    it "refuses an empty roster" do
+      table, zone = table_with({}, {})
+
+      expect(table.all_undead?(zone)).to be(false)
+    end
+  end
+
   describe "#all_living?" do
     let(:alive) { { "construct" => false, "undead" => false } }
 
@@ -550,6 +608,20 @@ RSpec.describe "base-uc-zones.yaml enrichment flags" do
     # it. The number can only rise as unknown alignments get filled in.
     it "finds 75 zones an empath may hunt" do
       expect(table.zones.count { |zone| table.all_construct_or_undead?(zone) }).to eq(75)
+    end
+
+    # The combat-trainer arg split of those 75 (LegOverlay#combat_trainer_args).
+    # 42 zones are all undead and 34 all construct. One zone,
+    # gigantic_lachmate_stairs, is in both: its only creature is flagged as a
+    # construct AND an undead. No zone mixes the two kinds, so every empath zone
+    # gets an arg today.
+    it "splits the empath zones into 42 all-undead and 34 all-construct, one in both" do
+      undead = table.zones.select { |zone| table.all_undead?(zone) }.map(&:key)
+      construct = table.zones.select { |zone| table.all_construct?(zone) }.map(&:key)
+      empath = table.zones.select { |zone| table.all_construct_or_undead?(zone) }.map(&:key)
+
+      expect([undead.size, construct.size, undead & construct, empath - undead - construct])
+        .to eq([42, 34, ["gigantic_lachmate_stairs"], []])
     end
 
     it "includes the obvious ones" do

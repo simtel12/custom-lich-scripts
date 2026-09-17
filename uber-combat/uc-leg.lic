@@ -113,7 +113,8 @@ class UcLegReport
 
     @overlay_engine = UberCombat::LegOverlay.new(@character, uc_weapons,
                                                  uc_spells: uc_spells,
-                                                 known_spell_names: known_spell_names)
+                                                 known_spell_names: known_spell_names,
+                                                 zone_table: @zone_table)
   end
 
   def run

@@ -67,11 +67,16 @@ module UberCombat
     #   to know it. Leaving this at its default empty list is the
     #   fail-safe direction: with nothing known, every candidate is
     #   reported and none is emitted.
-    def initialize(character, uc_weapons, uc_spells: nil, known_spell_names: [])
+    # zone_table: optional ZoneTable (or anything including CritterFlags with a
+    #   #zone lookup), used only to choose combat-trainer's creature args --
+    #   see combat_trainer_args. nil (the default) writes no args, which is
+    #   what a caller got before this parameter existed.
+    def initialize(character, uc_weapons, uc_spells: nil, known_spell_names: [], zone_table: nil)
       @character = character
       @uc_weapons = uc_weapons
       @uc_spells = uc_spells
       @known_spell_names = known_spell_names
+      @zone_table = zone_table
     end
 
     # leg: exactly ZonePicker#present's output shape --
@@ -148,10 +153,44 @@ module UberCombat
     # hunting-buddy.lic runs its own loop and is not guaranteed to be
     # wired to it, so stop_on is a legitimate belt-and-suspenders exit, not
     # dead weight.
+    #
+    # "args" is a String key too (hunting-buddy.lic:115, :133), and it is
+    # written only when there is a creature arg to pass. It never carries the
+    # flex suffix: hunting-buddy appends 'uc' onto this same list itself
+    # (hunting-buddy.lic:115-120), so the list reaches combat-trainer as, for
+    # example, ["undead", "uc"].
     def hunting_info_entry(leg, duration)
       entry = { zone: [leg[:zone_key]], "stop_on" => leg[:skills] }
       entry[:duration] = duration unless duration.nil?
+      args = combat_trainer_args(leg[:zone_key])
+      entry["args"] = args unless args.empty?
       entry
+    end
+
+    # combat-trainer's creature args for this zone (user, 2026-09-17): "undead"
+    # when every creature is undead, "construct" when every creature is a
+    # construct, and nothing otherwise. Athlya-main.yaml is the hand-written
+    # example of the construct case.
+    #
+    # The args are how an empath is allowed offense at all
+    # (combat-trainer.lic:5055-5056, :5616-5621). They are written for every
+    # guild, because they are facts about the zone rather than about the
+    # character, and a non-empath's is_offense_allowed? already answers true
+    # (is_permashocked?, combat-trainer.lic:5624).
+    #
+    # A mixed zone of constructs AND undead gets neither. Neither arg is right
+    # for it: `construct` would permit offense on the undead without
+    # Absolution. An unknown creature or an empty roster also gets neither,
+    # because the gates fail them (CritterFlags#all_construct?).
+    def combat_trainer_args(zone_key)
+      return [] unless @zone_table
+
+      zone = @zone_table.zone(zone_key)
+      return [] unless zone
+      return ["undead"] if @zone_table.all_undead?(zone)
+      return ["construct"] if @zone_table.all_construct?(zone)
+
+      []
     end
 
     # Entries the leg's skills match in the uc_spells catalogue, selected by

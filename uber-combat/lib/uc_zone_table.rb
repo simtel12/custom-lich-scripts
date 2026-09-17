@@ -354,6 +354,32 @@ module UberCombat
       roster.all? { |critter| critter.construct_or_undead == true }
     end
 
+    # Is every creature here a construct? Decides combat-trainer's `construct`
+    # arg (LegOverlay#combat_trainer_args), not which zones a leg may pick.
+    #
+    # Fails an unknown and an empty roster, like the gates above. The direction
+    # of a wrong answer matters: `construct` sets @construct_mode, and
+    # is_offense_allowed? then answers true for ANY target
+    # (combat-trainer.lic:5616-5621). A wrong true lets an empath attack a
+    # living creature. A wrong false only costs a stint of no offense.
+    def all_construct?(zone)
+      roster = critters_in(zone)
+      return false if roster.empty?
+
+      roster.all? { |critter| critter.construct == true }
+    end
+
+    # Is every creature here undead? Decides combat-trainer's `undead` arg.
+    # That arg permits offense only while Absolution is up
+    # (combat-trainer.lic:5619). Fails an unknown and an empty roster, for the
+    # reason all_construct? gives.
+    def all_undead?(zone)
+      roster = critters_in(zone)
+      return false if roster.empty?
+
+      roster.all? { |critter| critter.undead == true }
+    end
+
     # The necromancer gate. EVERY creature in the zone must be living, because
     # Thanatology cannot be learned from an undead or a construct, and
     # combat-trainer offers no way to fight half a room (43-critter-enrichment.md,

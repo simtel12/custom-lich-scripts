@@ -205,7 +205,8 @@ class DirectorWorld
       @character,
       UberCombat::LegSettings.weapons(settings),
       uc_spells: UberCombat::LegSettings.spells(settings),
-      known_spell_names: UberCombat::LegSettings.known_spell_names(get_data('spells'))
+      known_spell_names: UberCombat::LegSettings.known_spell_names(get_data('spells')),
+      zone_table: @zone_table
     )
 
     @abort_detail = nil
