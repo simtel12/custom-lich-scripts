@@ -97,10 +97,10 @@ RSpec.describe UberCombat::LegOverlay do
     # (user, 2026-09-17).
     context "with a zone table" do
       let(:critters) do
-        { "Undead" => { "undead" => true, "construct" => false },
+        { "Undead"    => { "undead" => true, "construct" => false },
           "Construct" => { "construct" => true, "undead" => false },
-          "Both" => { "construct" => true, "undead" => true },
-          "Living" => { "construct" => false, "undead" => false } }
+          "Both"      => { "construct" => true, "undead" => true },
+          "Living"    => { "construct" => false, "undead" => false } }
       end
 
       def zone(key, *critter_keys)
