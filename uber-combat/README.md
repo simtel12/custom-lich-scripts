@@ -32,7 +32,7 @@ calls and the printing, and they own no decision.
 | `uc-zones.lic` | Read-only diagnostic. Prints the itinerary and the candidate zones, nearest first |
 | `uc-leg.lic` | `;uc-leg` prints a leg, `write N` writes its overlay, `go N` writes then launches hunting-buddy |
 | `uc-probe.lic` | `;uc-probe` plans, `run N` walks a bounded budget of zones, `report` writes the results file |
-| `uc-director.lic` | `;uc-director` plans read-only, `run N` runs N productive stints, `report` prints the last run |
+| `uc-director.lic` | `;uc-director` plans read-only, `run N` runs N productive stints, `next` hunts the stalest leg once, `report` prints the last run |
 
 Not built yet: the healing selector, and director parts D2 through D6 (the
 fight boundary, the trigger and town cycle, session state, the robustness
@@ -71,7 +71,7 @@ bundle install
 rspec
 ```
 
-612 examples, about 5 seconds, no game needed.
+643 examples, about 6 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -264,6 +264,7 @@ a profile is visible rather than silently making the character train badly.
     ;uc-director            plan only, read-only, issues nothing
     ;uc-director run N      N stints that actually hunt
     ;uc-director cycles N   N full passes through the itinerary
+    ;uc-director next       one leg: the one holding the stalest skill
     ;uc-director report     the last run's stint table
 
 `run` counts stints that hunted. A stint that never reached the hunt loop does
@@ -281,6 +282,23 @@ meaning it; a cycle budget does not.
 
 Neither form has an unbounded mode, and the count is required. One leg is half
 an hour of unattended combat.
+
+`next` hunts one leg and stops after its first productive stint. It picks the
+leg holding the one skill that has gone longest without a productive stint. A
+skill never trained counts as the stalest, and ties go to itinerary order, so a
+first `next` takes the leg `run 1` would.
+
+Every mode records the history `next` reads, in `CharSettings` under
+uc-director: when each skill last rode a productive stint, and when each zone
+last failed to hunt. A skill counts as trained when its leg was productive,
+whether or not that one skill gained a rank.
+
+A leg that fails to hunt is retried once, then `next` moves to the next-stalest
+leg. The failure also sends that leg to the back of the order for later runs,
+as if it had just been hunted. Without that, a leg that can never hunt would
+never get a timestamp and would be picked first every time.
+
+Bare `;uc-director` prints the order `next` would use and why.
 
 ## The data file
 

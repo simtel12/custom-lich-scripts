@@ -52,10 +52,10 @@ class FakeDirectorWorld
   MAX_STINTS = 40
   MAX_CYCLES = 120
 
-  attr_accessor :abort_detail, :weapons, :existing_first_line, :write_error
+  attr_accessor :abort_detail, :weapons, :existing_first_line, :write_error, :history
   attr_writer :abort_reason
   attr_reader :events, :trace, :checkpoints, :timeouts, :overlay_calls, :snapshot_calls,
-              :itinerary_calls, :recoveries, :trackers, :ranks, :mindstates
+              :itinerary_calls, :recoveries, :trackers, :ranks, :mindstates, :saved_histories
 
   # itinerary: the first ZonePicker::Itinerary build_itinerary hands back.
   #   queue_itinerary adds the ones a :reselect rebuild gets; the last one is
@@ -88,6 +88,11 @@ class FakeDirectorWorld
     @now = Time.utc(2026, 9, 3, 8, 0, 0)
     @ranks = { "Evasion" => 200, "Shield Usage" => 180, "Parry Ability" => 160 }.merge(ranks)
     @mindstates = mindstates
+    # nil reads as "never saved", which is what a fresh character's
+    # CharSettings holds. NOT traced: the trace examples pin the loop's game
+    # contact, and the history is bookkeeping around it.
+    @history = nil
+    @saved_histories = []
   end
 
   def queue_itinerary(itinerary)
@@ -196,6 +201,19 @@ class FakeDirectorWorld
     UberCombat::Director::Launch.new(outcome: script[:outcome], stop_reason: script[:stop_reason],
                                      completed_successfully: script[:outcome] == :completed,
                                      exit_error: script[:exit_error])
+  end
+
+  def load_history
+    @history
+  end
+
+  # Kept as the value load_history returns, so a second session on the same
+  # world sees what the first one saved -- the way CharSettings behaves
+  # between two invocations of the real script.
+  def save_history(history)
+    @saved_histories << history
+    @history = history
+    nil
   end
 
   def recover(reason)
@@ -492,6 +510,143 @@ RSpec.describe UberCombat::Director do
     it "treats an unknown unit as already spent rather than as unbounded" do
       expect(described_class.budget_spent?(:legs, 5, 0, 0)).to be(true)
     end
+
+    it "spends the next unit on one productive stint, whatever the budget says" do
+      expect(described_class.budget_spent?(:next, 9, 0, 0)).to be(false)
+      expect(described_class.budget_spent?(:next, 9, 1, 0)).to be(true)
+    end
+  end
+
+  describe "skill history" do
+    def history(productive: {}, failed: {})
+      { productive: productive, failed: failed }
+    end
+
+    def stint_for(leg_value, classification, ended_at)
+      UberCombat::Director::Stint.new(leg_index: 0, leg: leg_value, started_at: ended_at - 60,
+                                      ended_at: ended_at, elapsed: 60.0, before: {}, after: {},
+                                      stop_reason: nil, outcome: :completed,
+                                      classification: classification)
+    end
+
+    describe ".normalize_history" do
+      it "reads nil as an empty history" do
+        expect(described_class.normalize_history(nil)).to eq(history)
+      end
+
+      it "fills in a missing map" do
+        expect(described_class.normalize_history(productive: { "Bow" => 5 }))
+          .to eq(history(productive: { "Bow" => 5 }))
+      end
+    end
+
+    describe ".remember" do
+      let(:at) { Time.utc(2026, 9, 17, 12, 0, 0) }
+
+      # User, 2026-09-17: a skill counts as learned when it was part of a
+      # productive leg, not when that one skill gained a rank.
+      it "stamps every skill on a productive leg with the stint's end" do
+        stint = stint_for(leg(%w[Bow Brawling]), :productive, at)
+        result = described_class.remember(history(productive: { "Slings" => 1 }), stint)
+
+        expect(result[:productive]).to eq("Slings" => 1, "Bow" => at.to_i, "Brawling" => at.to_i)
+        expect(result[:failed]).to eq({})
+      end
+
+      it "stamps the zone, not the skills, when a stint fails" do
+        stint = stint_for(leg(["Bow"], zone_key: "hogs"), :failed_to_hunt, at)
+        result = described_class.remember(history(productive: { "Bow" => 1 }), stint)
+
+        expect(result[:productive]).to eq("Bow" => 1)
+        expect(result[:failed]).to eq("hogs" => at.to_i)
+      end
+
+      it "counts :timed_out and :crashed as failures" do
+        [:timed_out, :crashed].each do |classification|
+          result = described_class.remember(history, stint_for(leg(["Bow"]), classification, at))
+          expect(result[:failed]).to eq("crossing_rats" => at.to_i)
+        end
+      end
+
+      it "records nothing for :launch_refused" do
+        start = history(productive: { "Bow" => 1 })
+        expect(described_class.remember(start, stint_for(leg(["Bow"]), :launch_refused, at))).to eq(start)
+      end
+
+      it "does not modify the history it was given" do
+        start = history
+        described_class.remember(start, stint_for(leg(["Bow"]), :productive, at))
+
+        expect(start).to eq(history)
+      end
+    end
+
+    describe ".stalest_skill" do
+      it "picks the skill with the oldest stamp" do
+        stamps = history(productive: { "Bow" => 50, "Brawling" => 20 })
+        found = described_class.stalest_skill(leg(%w[Bow Brawling]), stamps)
+        expect(found).to eq(skill: "Brawling", at: 20)
+      end
+
+      it "treats a skill with no stamp as stalest of all" do
+        found = described_class.stalest_skill(leg(%w[Bow Brawling]), history(productive: { "Bow" => 50 }))
+        expect(found).to eq(skill: "Brawling", at: nil)
+      end
+    end
+
+    describe ".stalest_order" do
+      let(:legs) { [leg(["Bow"], zone_key: "a"), leg(%w[Brawling Slings], zone_key: "b"), leg(["Staves"], zone_key: "c")] }
+
+      # The leg is scored by its ONE stalest skill (user, 2026-09-17), so a
+      # freshly trained partner does not rescue it.
+      it "puts the leg holding the stalest single skill first" do
+        stamps = { "Bow" => 300, "Brawling" => 900, "Slings" => 100, "Staves" => 200 }
+        expect(described_class.stalest_order(legs, history(productive: stamps))).to eq([1, 2, 0])
+      end
+
+      it "puts a leg with a never-trained skill ahead of every stamp" do
+        stamps = { "Bow" => 1, "Brawling" => 900, "Staves" => 2 }
+        expect(described_class.stalest_order(legs, history(productive: stamps))).to eq([1, 0, 2])
+      end
+
+      # On a first-ever run every leg ties, and next takes the leg run 1 would.
+      it "keeps itinerary order among ties" do
+        expect(described_class.stalest_order(legs, history)).to eq([0, 1, 2])
+      end
+
+      # Without this a leg that can never hunt never gets a productive stamp
+      # and wins every `next` forever.
+      it "sends a leg whose zone failed behind the legs touched before the failure" do
+        stamps = { "Bow" => 300, "Brawling" => 400, "Slings" => 400, "Staves" => 500 }
+        order = described_class.stalest_order(legs, history(productive: stamps, failed: { "a" => 450 }))
+
+        expect(order).to eq([1, 0, 2])
+      end
+
+      it "ignores a failure older than the leg's own stalest stamp" do
+        stamps = { "Bow" => 300, "Brawling" => 400, "Slings" => 400, "Staves" => 500 }
+        order = described_class.stalest_order(legs, history(productive: stamps, failed: { "a" => 100 }))
+
+        expect(order).to eq([0, 1, 2])
+      end
+
+      it "counts a failure on a never-trained leg as its last touch" do
+        stamps = { "Brawling" => 400, "Slings" => 400, "Staves" => 500 }
+        order = described_class.stalest_order(legs, history(productive: stamps, failed: { "a" => 450 }))
+
+        expect(order).to eq([1, 0, 2])
+      end
+    end
+
+    describe ".first_unrefused" do
+      it "returns the first index in order that is not refused" do
+        expect(described_class.first_unrefused([2, 0, 1], { 2 => :gaps })).to eq(0)
+      end
+
+      it "returns nil when every index is refused" do
+        expect(described_class.first_unrefused([1, 0], { 0 => :gaps, 1 => :failed_to_hunt })).to be_nil
+      end
+    end
   end
 
   describe ".safety_stop?" do
@@ -678,6 +833,128 @@ RSpec.describe UberCombat::Director do
 
         expect(outcome.stopped).to eq(:health)
         expect(world.recoveries).to eq([:health])
+      end
+    end
+
+    describe "skill history" do
+      it "saves every productive stint's skills in every unit" do
+        world = world_for(bow, brawling)
+        session_for(world).run(2)
+
+        expect(world.history[:productive].keys).to contain_exactly("Bow", "Brawling")
+      end
+
+      it "saves a failed stint against its zone" do
+        world = world_for(bow)
+        world.script_stint(stop_reason: nil, elapsed: 5.0).script_stint
+        session_for(world).run(1)
+
+        expect(world.history[:failed].keys).to eq(["crossing_rats"])
+      end
+
+      it "saves after the stint even when after_stint breaks the run" do
+        UberCombat::Director.registered_plugins.clear
+        UberCombat::Director.register_plugin(DirectorRecordingPlugin.new(after_stint: :break))
+        world = world_for(bow)
+        session_for(world).run(3)
+
+        expect(world.saved_histories.size).to eq(1)
+      ensure
+        UberCombat::Director.registered_plugins.clear
+      end
+
+      it "saves nothing for a launch refusal" do
+        world = world_for(bow)
+        world.script_stint(outcome: :start_error, stop_reason: nil)
+        session_for(world).run(1)
+
+        expect(world.saved_histories).to be_empty
+      end
+    end
+
+    describe "the next unit" do
+      it "runs exactly one productive stint" do
+        world = world_for(bow, brawling, slings)
+        outcome = session_for(world).run(1, unit: :next)
+
+        expect(outcome.stopped).to eq(:budget_spent)
+        expect(outcome.stints.size).to eq(1)
+      end
+
+      it "hunts the leg holding the stalest skill" do
+        world = world_for(bow, brawling, slings)
+        world.history = { productive: { "Bow" => 300, "Brawling" => 100, "Slings" => 200 }, failed: {} }
+        session_for(world).run(1, unit: :next)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] }).to eq([["Brawling"]])
+      end
+
+      # Two invocations on one world stand in for two `;uc-director next`
+      # commands: the second must not repeat the leg the first just trained.
+      it "moves on to a different leg on the next invocation" do
+        world = world_for(bow, brawling)
+        session_for(world).run(1, unit: :next)
+        session_for(world).run(1, unit: :next)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] }).to eq([["Bow"], ["Brawling"]])
+      end
+
+      it "retries a failed leg, then falls through to the next-stalest leg" do
+        world = world_for(bow, brawling, slings)
+        world.history = { productive: { "Bow" => 300, "Brawling" => 100, "Slings" => 200 }, failed: {} }
+        world.script_stint(stop_reason: nil, elapsed: 5.0)
+             .script_stint(stop_reason: nil, elapsed: 5.0)
+             .script_stint
+        outcome = session_for(world).run(1, unit: :next)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] })
+          .to eq([["Brawling"], ["Brawling"], ["Slings"]])
+        expect(outcome.productive).to eq(1)
+      end
+
+      # Bow and Slings are both never trained, so without the failure record
+      # Bow would win again on itinerary order and burn two more stints.
+      it "does not hand a failed leg first place again" do
+        world = world_for(bow, brawling, slings)
+        world.script_stint(stop_reason: nil, elapsed: 5.0)
+             .script_stint(stop_reason: nil, elapsed: 5.0)
+             .script_stint
+        session_for(world).run(1, unit: :next)
+        session_for(world).run(1, unit: :next)
+
+        expect(world.overlay_calls.map { |call| call.first[:skills] })
+          .to eq([["Bow"], ["Bow"], ["Brawling"], ["Slings"]])
+      end
+
+      it "never rebuilds the itinerary" do
+        world = world_for(bow)
+        session_for(world).run(1, unit: :next)
+
+        expect(world.itinerary_calls).to eq(1)
+      end
+
+      it "announces the order it will try" do
+        world = world_for(bow, brawling)
+        world.history = { productive: { "Bow" => 300, "Brawling" => 100 }, failed: {} }
+        session_for(world).run(1, unit: :next)
+
+        expect(world.event(:next_order).first[:order]).to eq([1, 0])
+      end
+
+      it "does not announce an order in the other units" do
+        world = world_for(bow)
+        session_for(world).run(1)
+
+        expect(world.event_names).not_to include(:next_order)
+      end
+
+      it "stops with :all_legs_refused when every leg fails" do
+        world = world_for(bow, brawling)
+        world.script_stint(stop_reason: nil, elapsed: 5.0)
+        outcome = session_for(world).run(1, unit: :next)
+
+        expect(outcome.stopped).to eq(:all_legs_refused)
+        expect(outcome.stints.size).to eq(2 * UberCombat::Director::MAX_LEG_FAILURES)
       end
     end
 

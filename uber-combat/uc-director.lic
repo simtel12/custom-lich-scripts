@@ -34,12 +34,20 @@
                                the itinerary currently holds, so this is the
                                unit that stays meaningful when the leg count
                                changes underneath you.
+    ;uc-director next       -- act. Hunt ONE leg: the one holding the skill
+                               that has gone longest without a productive
+                               stint. A skill never trained counts as the
+                               stalest. A leg that fails to hunt is retried,
+                               then the next-stalest leg is tried, and the
+                               failure sends that leg to the back next time.
+                               Plan mode prints the order it would use.
     ;uc-director report     -- print the last run's stint table. In-memory
                                only in D1 (nothing is persisted; see below).
 
   Examples:
     ;uc-director
     ;uc-director run 8
+    ;uc-director next
     ;uc-director report
 
   THE DEFAULT MODE ACTS ON NOTHING ON PURPOSE. Every script in this project
@@ -54,9 +62,13 @@
   it would let `run 8` mean anything from zero to eight hunts. A stint that
   did not hunt increments that leg's failure counter instead (spec 6.3).
 
-  NOTHING IS PERSISTED IN D1 (spec 7.3). No CharSettings, no Vars, no results
-  file. The itinerary is re-derived from live skills on every start, so
-  nothing a restart could leave stale is ever written. The single file this
+  ALMOST NOTHING IS PERSISTED IN D1 (spec 7.3). No Vars, no results file.
+  The itinerary is re-derived from live skills on every start, so nothing a
+  restart could leave stale is ever written. The one exception is the skill
+  history `next` orders by (DirectorWorld::HISTORY_*_KEY): two CharSettings
+  maps of timestamps, written after every stint in every mode. They only
+  choose which leg to try first, so a stale one costs an ordering, never a
+  wrong hunt. The town plugin keeps its cooldowns in CharSettings too. The single file this
   script touches is the character's `uc` profile overlay, written atomically
   by LegWriter and removed again in before_dying. `;uc-director report` reads
   a process-lifetime global, so it can report a run that finished in this
@@ -127,6 +139,13 @@ class DirectorWorld
   # ASYNCHRONOUS (script.rb:1781-1783), so a caller that does not wait can
   # start the next stint while the old walker is still tearing down.
   WALKER_STOP_TIMEOUT = 10
+
+  # The skill history `next` orders its legs by (Director.remember). Two flat
+  # keys, whole-value replacement, the same shape the town plugin uses for its
+  # cooldowns. CharSettings is scoped to Script.current.name, which is
+  # uc-director in every mode, so plan mode reads what `run` wrote.
+  HISTORY_PRODUCTIVE_KEY = 'uc_skill_last_productive'
+  HISTORY_FAILED_KEY = 'uc_zone_last_failed'
 
   # The return shape of #run_stint (spec 3.2). The Struct itself is DEFINED in
   # lib/uc_director.rb, not here, and this adapter only builds instances of it.
@@ -459,6 +478,26 @@ class DirectorWorld
     false
   end
 
+  # -------------------------------------------------------------- history
+
+  # Plain Hashes, never the proxy. CharSettings[...] returns a SettingsProxy
+  # (see uc-probe.lic's #plain), and one kept past this call would be a live
+  # handle into the settings store rather than a copy of it.
+  def load_history
+    { productive: stored_stamps(HISTORY_PRODUCTIVE_KEY), failed: stored_stamps(HISTORY_FAILED_KEY) }
+  end
+
+  # Rescued, because the stint it records has already happened: a settings
+  # write that raised must not end the run. The cost is one ordering.
+  def save_history(history)
+    CharSettings[HISTORY_PRODUCTIVE_KEY] = history[:productive].dup
+    CharSettings[HISTORY_FAILED_KEY] = history[:failed].dup
+    nil
+  rescue StandardError => e
+    DRC.message(format('uc-director: could not save the skill history (%s: %s).', e.class, e.message))
+    nil
+  end
+
   # -------------------------------------------------------------- recovery
 
   # Only ever called by the core, and only for a SAFETY stop
@@ -508,6 +547,7 @@ class DirectorWorld
     when :verdict then render_verdict(data)
     when :stopped then render_stopped(data)
     when :plugin_break then render_plugin_break(data)
+    when :next_order then render_next_order(data)
     else
       DRC.message(format('uc-director: unhandled event %s %s', event, data.inspect))
     end
@@ -611,6 +651,19 @@ class DirectorWorld
 
     DRC.message('uc-director: hunt_duration_minutes must be a positive whole number. ' \
                 'Ignoring it and using the default.')
+  end
+
+  # Anything unreadable reads as "never", which is the safe direction: at
+  # worst a skill is hunted sooner than it needed to be.
+  def stored_stamps(key)
+    raw = CharSettings[key]
+    return {} if raw.nil?
+
+    raw.to_hash.each_with_object({}) do |(name, stamp), out|
+      out[name.to_s] = stamp.to_i if stamp.is_a?(Numeric)
+    end
+  rescue StandardError
+    {}
   end
 
   def note(reason, value = nil)
@@ -828,6 +881,40 @@ class DirectorWorld
     end
   end
 
+  # The order `next` will try its legs in, and why. Printed by `next` before
+  # the first stint and by plan mode, so the choice is never a mystery.
+  def render_next_order(data)
+    itinerary = data[:itinerary]
+    history = UberCombat::Director.normalize_history(data[:history])
+    now = Time.now.to_i
+    DRC.message('-- Leg order for `next`: the stalest skill first --')
+    Array(data[:order]).each_with_index do |index, position|
+      leg = itinerary.legs[index]
+      stalest = UberCombat::Director.stalest_skill(leg, history)
+      failed = history[:failed][leg[:zone_key]]
+      DRC.message(format('  %d. leg %d: %s', position + 1, index + 1, leg[:skills].join(', ')), false)
+      line = format('       stalest %s, %s', stalest[:skill], productive_age(stalest[:at], now))
+      if failed && (stalest[:at].nil? || failed > stalest[:at])
+        line += format('; sent back, %s failed %s', leg[:zone_key], age_text(failed, now))
+      end
+      DRC.message(line, false)
+    end
+  end
+
+  def productive_age(stamp, now)
+    stamp.nil? ? 'never productive' : format('last productive %s', age_text(stamp, now))
+  end
+
+  def age_text(stamp, now)
+    minutes = [(now - stamp) / 60, 0].max
+    days, rest = minutes.divmod(24 * 60)
+    hours, mins = rest.divmod(60)
+    return format('%dd %dh ago', days, hours) if days.positive?
+    return format('%dh %dm ago', hours, mins) if hours.positive?
+
+    format('%dm ago', mins)
+  end
+
   # A plugin prints its own reason before it answers :break. This line only
   # says WHERE the run was stopped, so the two messages read as one story.
   def render_plugin_break(data)
@@ -938,7 +1025,7 @@ class UcDirector
 
   # Loads every plugin file, sorted, so registration order is filename order.
   #
-  # CALLED ONLY FOR run AND cycles. Plan mode promises to write nothing and
+  # CALLED ONLY FOR run, cycles AND next. Plan mode promises to write nothing and
   # launch nothing, and a plugin's after_initialize could break that promise.
   #
   # The registry is CLEARED first. The lib uses `||=` so that another script
@@ -995,6 +1082,7 @@ class UcDirector
     itinerary = world.build_itinerary
     leg = itinerary.legs.first
     world.announce(:plan, plan_payload(world, itinerary, leg))
+    report_next_order(world, itinerary)
     report_floor(world)
   end
 
@@ -1039,9 +1127,12 @@ class UcDirector
     # and building one for a banner would be a second build_itinerary call,
     # which the picker answers from live skills and so can answer differently.
     DRC.message(
-      if unit == :cycles
+      case unit
+      when :cycles
         format('-- Hunting: %d full pass(es) through the itinerary. The director picks the legs. --',
                budget)
+      when :next
+        '-- Hunting: one leg, the one holding the skill trained longest ago. --'
       else
         format('-- Hunting: %d hunt(s) to run. The director picks the legs. --', budget)
       end
@@ -1184,6 +1275,16 @@ class UcDirector
     DRC.message(format('uc-director: could not read the overlay path (%s). Continuing.', e.class))
   end
 
+  # A READ of the stored history, so plan mode stays read-only. Same order
+  # and same lines `next` itself prints before its first stint.
+  def report_next_order(world, itinerary)
+    return if itinerary.legs.empty?
+
+    history = UberCombat::Director.normalize_history(world.load_history)
+    world.announce(:next_order, itinerary: itinerary, history: history,
+                                order: UberCombat::Director.stalest_order(itinerary.legs, history))
+  end
+
   def report_floor(world)
     DRC.message('-- Safety floor (checked before EVERY stint, never in a death handler) --')
     DRC.message(format('  health floor %d, current %s', DirectorWorld::HEALTH_FLOOR, DRStats.health), false)
@@ -1258,9 +1359,16 @@ when /\Acycles?\z/i
     UcDirector.load_plugins
     UcDirector.new.run(count.to_i, unit: :cycles)
   end
+when /\Anext\z/i
+  # No count, and that does not break the no-unbounded-mode rule: `next` is
+  # one productive stint by definition. The budget of 1 is ignored by the
+  # :next unit and passed only because run takes one.
+  UcDirector.load_plugins
+  UcDirector.new.run(1, unit: :next)
 when /\Areport\z/i
   UcDirector.new.report
 else
   DRC.message("uc-director: unknown argument '#{mode}'. " \
-              'Usage: ;uc-director | ;uc-director run N | ;uc-director cycles N | ;uc-director report')
+              'Usage: ;uc-director | ;uc-director run N | ;uc-director cycles N | ;uc-director next | ' \
+              ';uc-director report')
 end

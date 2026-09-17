@@ -442,8 +442,9 @@ module UberCombat
       Decision.new(action: :continue, reason: nil)
     end
 
-    # Has the run's budget been spent? Pure, so both units are testable without
-    # a session.
+    # Has the run's budget been spent? Pure, so every unit is testable without
+    # a session. :next ignores the budget: it is one productive stint by
+    # definition.
     #
     # An unknown unit spends IMMEDIATELY rather than running forever. A typo
     # in the argument parser must not turn a bounded request into an unbounded
@@ -453,6 +454,7 @@ module UberCombat
       case unit
       when :stints then productive >= budget
       when :cycles then cycles >= budget
+      when :next then productive >= 1
       else true
       end
     end
@@ -474,6 +476,87 @@ module UberCombat
     # Only a SAFETY stop runs the recovery. See SAFETY_STOPS.
     def self.safety_stop?(reason)
       SAFETY_STOPS.include?(reason)
+    end
+
+    # ------------------------------------------------------- skill history
+    #
+    # The one thing the director remembers across runs, and the only input
+    # `;uc-director next` orders its legs by. Two maps of Unix-second Integers:
+    #
+    #   productive: skill name -> when that skill last rode a PRODUCTIVE stint
+    #   failed:     zone key   -> when a stint in that zone last failed to hunt
+    #
+    # "Productive" is the stint classification, not a rank gain per skill
+    # (user, 2026-09-17): every skill on a productive leg is stamped, whether
+    # or not that one skill moved.
+    #
+    # Written by every mode, so a skill trained in `run 8` is not picked again
+    # by the next `next`. A HINT, never a fact, in the D4 sense: it decides only
+    # which leg to try first. The itinerary itself is still re-derived from
+    # live skills on every start.
+    #
+    # Accepts whatever the world handed back and returns both maps, so a world
+    # that has never saved anything reads as an empty history.
+    def self.normalize_history(history)
+      history ||= {}
+      { productive: (history[:productive] || {}).to_h, failed: (history[:failed] || {}).to_h }
+    end
+
+    # A NEW history with this stint folded in. Pure: the time comes from the
+    # stint's own ended_at, never from a clock.
+    #
+    # A failure is stamped against the ZONE, not the skills. What fails a stint
+    # is almost always the zone (unreachable, premium-gated, occupied, a travel
+    # wedge), and it leaves the skills' own staleness untouched: a failed leg
+    # goes behind the others without its skills being counted as trained.
+    #
+    # :launch_refused is not a leg failure. It means something else is driving
+    # the character, and the loop stops on it before this is ever reached.
+    def self.remember(history, stint)
+      at = stint.ended_at.to_i
+      case stint.classification
+      when :productive
+        stamps = stint.leg[:skills].to_h { |skill| [skill, at] }
+        { productive: history[:productive].merge(stamps), failed: history[:failed] }
+      when :launch_refused
+        history
+      else
+        { productive: history[:productive], failed: history[:failed].merge(stint.leg[:zone_key] => at) }
+      end
+    end
+
+    # The leg's most neglected skill, as { skill:, at: }. `at` is nil for a
+    # skill with no productive stint on record, and nil sorts before every
+    # stamp: never trained is the stalest there is. Ties keep the leg's own
+    # skill order.
+    def self.stalest_skill(leg, history)
+      leg[:skills].map { |skill| { skill: skill, at: history[:productive][skill] } }
+                  .min_by { |entry| entry[:at] || -Float::INFINITY }
+    end
+
+    # When this leg was last "touched": its stalest skill's stamp, or its
+    # zone's last failure if that is more recent. nil means never touched.
+    #
+    # The failure takes part through max, so a leg that failed moves to the
+    # back as if it had just been hunted, and comes round again once the
+    # other legs have had their turn. Leaving failures out would hand the
+    # first place to a leg that can never hunt, forever, because a leg that
+    # never hunts never gets a productive stamp.
+    def self.leg_touched_at(leg, history)
+      [stalest_skill(leg, history)[:at], history[:failed][leg[:zone_key]]].compact.max
+    end
+
+    # Leg INDICES, stalest first (user, 2026-09-17). The leg holding the one
+    # skill trained longest ago wins; a leg never touched beats every stamp.
+    # Ties keep itinerary order, which is descending leader rank
+    # (see .wrap), so on a first-ever run `next` takes the leg `run 1` would.
+    def self.stalest_order(legs, history)
+      legs.each_index.sort_by { |index| [leg_touched_at(legs[index], history) || -Float::INFINITY, index] }
+    end
+
+    # The first index in `order` not refused for this run, or nil.
+    def self.first_unrefused(order, refused)
+      order.find { |index| !refused.key?(index) }
     end
 
     # The driver. Everything above this class is pure; this class runs the
@@ -510,6 +593,11 @@ module UberCombat
     #                                      one entry per skill asked for.
     #   world.run_stint(timeout)        -> Launch (see above).
     #   world.recover(reason)           -> nil. gosafe under its own timeout.
+    #   world.load_history              -> { productive: {skill => Integer},
+    #                                      failed: {zone_key => Integer} }.
+    #                                      Read once per run. See .remember.
+    #   world.save_history(history)     -> nil. After every stint that was
+    #                                      not :launch_refused. Must not raise.
     #   world.announce(event, payload)  -> nil. Presentation only; the core
     #                                      never reads anything back from it.
     #
@@ -575,6 +663,12 @@ module UberCombat
       # splits a cluster as a character's ranks spread, and a rebuild can
       # return a different count. So a stint budget chosen to mean "one cycle"
       # silently stops meaning it, which is the whole reason :cycles exists.
+      #
+      # :next runs ONE productive stint on the leg holding the stalest skill
+      # (.stalest_order). The order is computed once, from the first build,
+      # and a failed leg falls through to the next leg in it after
+      # MAX_LEG_FAILURES. It never advances, reselects or rebuilds: the run
+      # ends on the first productive stint, so none of that could matter.
       def run(budget, unit: :stints)
         productive = 0
         cycles = 0
@@ -582,6 +676,13 @@ module UberCombat
         Director.notify_hook(:before_run, @host, budget: budget, unit: unit)
         itinerary = build_itinerary(cycles)
         return finish(:no_legs, [], 0) if itinerary.legs.empty?
+
+        history = Director.normalize_history(@world.load_history)
+        order = nil
+        if unit == :next
+          order = Director.stalest_order(itinerary.legs, history)
+          @world.announce(:next_order, itinerary: itinerary, order: order, history: history)
+        end
 
         index    = 0
         refused  = {}          # leg index -> Symbol reason; the leg is out for this run
@@ -607,7 +708,7 @@ module UberCombat
             break
           end
 
-          index = next_playable(index, itinerary, refused)
+          index = order ? Director.first_unrefused(order, refused) : next_playable(index, itinerary, refused)
           if index.nil?
             stopped = :all_legs_refused
             break
@@ -675,6 +776,11 @@ module UberCombat
             break
           end
 
+          # Before after_stint, so a town trip that breaks the run cannot lose
+          # the record of the stint that already happened.
+          history = Director.remember(history, stint)
+          @world.save_history(history)
+
           # AFTER the launch_refused stop, because that stop means something
           # else drives the character, and a town trip would fight it. AFTER
           # the snapshot, because mindstate drains while a plugin works. Fired
@@ -703,6 +809,9 @@ module UberCombat
           failures[index] = 0
           productive     += 1
           barren[index]   = Director.gained?(stint) ? 0 : barren[index] + 1
+
+          # One leg, and it hunted. Nothing below can change what happens next.
+          break if unit == :next
 
           # Decision 10: exactly one observe_tick per PRODUCTIVE stint, and
           # observe_fight_end is NEVER called -- D1 has no fight boundary, so
