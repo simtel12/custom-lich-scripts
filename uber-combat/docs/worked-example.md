@@ -1,9 +1,11 @@
 # A worked example: Iruss
 
+Part of the [uber-combat](../README.md) documentation.
+
 One character, one `uc_settings` block, and the four legs the picker builds out
 of them.
 
-Read this after the README's **Settings** section. That section states the rules
+Read this after [`settings.md`](settings.md). That document states the rules
 one at a time. This one shows what they do together, which is the part that is
 hard to predict from the rules alone: the leg boundaries here are set by the
 zone table, not by the cap everyone assumes is doing the work.
