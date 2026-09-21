@@ -27,6 +27,7 @@ Everything below is a standalone Lich script, unrelated to CharBus.
 | Script | What it does |
 | --- | --- |
 | [`butcher.lic`](butcher.lic) | Standalone necromancer corpse butchery (preserve → butcher to exhaustion → optional dissect), extracted from dr-scripts' `combat-trainer.lic` so it can run without a full combat session. |
+| [`cast-room.lic`](cast-room.lic) | Casts one spell at every hostile creature in the room, one at a time, targeting each by its creature id (`;cast-room fs`). Uses the matching `offensive_spells` entry when there is one. |
 | [`cyclic-charge.lic`](cyclic-charge.lic) | Watches for a cambrinth item discharging and recharges it automatically (`;cyclic-charge <amount>`). |
 | [`do-thing.lic`](do-thing.lic) | Repeats an arbitrary command until killed, waiting out roundtime between sends (`;repeat dig`). |
 | [`escort.lic`](escort.lic) | Local stand-in for obsolete mapdb `StringProcs` that used to call `start_script('escort')` — handles a handful of specific room transitions (monastery, galley/ferry) the map data no longer covers directly. |

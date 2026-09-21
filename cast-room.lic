@@ -1,0 +1,236 @@
+=begin
+  cast-room: casts one spell at every hostile creature in the room, one
+  creature at a time, and targets each creature by its server id (#12345).
+
+  The ids come from Lich::DragonRealms::Creature.targets, the same roster that
+  combat-trainer uses: hostile, not dead, and in the current room. Each creature
+  gets one cast. A creature that arrives during the run also gets its turn.
+  Creatures in ignored_npcs are skipped.
+
+  Targeted Magic spells (prep: target) FACE the creature by id before the prep,
+  then use the normal cast verb (so barrage still works). Other spells prep and
+  then CAST #id.
+
+  Spell settings come from the matching offensive_spells entry in your YAML if
+  one exists (mana, cambrinth, prep_time, cast, and so on). If not, the base
+  spell data at minimum prep is used. The mana argument overrides the prep mana
+  in both cases. The script waits for offensive_spell_mana_threshold before
+  each cast.
+
+  If the creature leaves or dies during the prep, a Targeted Magic spell is
+  released (its target pattern is on that creature) and the script moves on to
+  the next creature. Any other spell stays prepared and is cast at the next
+  creature instead. If no creature is left, it stays prepared.
+
+  Examples:
+    ;cast-room fs          # Fire Shards at every creature
+    ;cast-room sts 10      # Stone Strike at 10 prep mana
+=end
+
+class CastRoom
+  @@results = Hash.new(0)
+  @@targeted = false
+
+  def self.results
+    @@results
+  end
+
+  def self.targeted?
+    @@targeted
+  end
+
+  def initialize
+    arg_definitions = [
+      [
+        { name: 'spell', regex: /^[\w']+$/,
+          description: 'Spell abbreviation, or the start of the spell name' },
+        { name: 'mana', regex: /^\d+$/, optional: true,
+          description: 'Prep mana (default: offensive_spells entry, else minimum prep)' },
+        { name: 'script_summary', optional: true,
+          description: 'Cast a spell at each creature in the room, one at a time, by creature id' }
+      ]
+    ]
+
+    args = parse_args(arg_definitions)
+    @settings = get_settings
+    @spell = find_spell(args.spell)
+
+    unless @spell
+      DRC.message("cast-room: no spell matches '#{args.spell}'")
+      exit
+    end
+    if @spell['ritual']
+      DRC.message("cast-room: #{@spell['name']} is a ritual spell, which this script does not support")
+      exit
+    end
+
+    @spell['mana'] = args.mana.to_i if args.mana
+    @spell['prep'] ||= 'target' if @spell['skill'] == 'Targeted Magic'
+    @prep_command = @spell['prep_type'] || @spell['prep'] || 'prep'
+    @prep_command = 'prep' if @prep_command == 'segue'
+    @targeted = @prep_command == 'target'
+    @@targeted = @targeted
+    @ignored_npcs = @settings.ignored_npcs || []
+    @mana_threshold = @settings.offensive_spell_mana_threshold.to_i
+    @done_ids = []
+
+    unless next_target
+      DRC.message('cast-room: no hostile creatures in the room')
+      exit
+    end
+
+    echo "Casting #{@spell['name']} (#{@spell['mana']} mana) at each creature in the room"
+
+    loop do
+      wait_for_mana
+      creature = next_target
+      break unless creature
+
+      @done_ids << creature.id
+      cast_at(creature)
+    end
+  end
+
+  # Exact abbreviation first, then the start of the spell name (the same order
+  # as cast.lic), so a short query can't pick a different spell by name.
+  # An offensive_spells entry carries the player's own mana/cambrinth/cast
+  # settings, so it wins over the base spell data.
+  def find_spell(query)
+    configured = (@settings.offensive_spells || [])
+                 .select { |spell| spell.is_a?(Hash) }
+                 .map { |spell| [spell['name'], spell] }
+    name, spell = lookup_spell(configured, query) || lookup_spell(get_data('spells').spell_data.to_a, query)
+    return nil unless spell
+
+    spell.merge('name' => name || spell['abbrev'])
+  end
+
+  def lookup_spell(pairs, query)
+    pairs.find { |_, spell| spell['abbrev']&.casecmp?(query) } ||
+      pairs.find { |name, _| name&.downcase&.start_with?(query.downcase) }
+  end
+
+  def next_target
+    Lich::DragonRealms::Creature.targets.find do |creature|
+      !@done_ids.include?(creature.id) && !ignored?(creature)
+    end
+  end
+
+  # The noun stays nil until the room-objs or assess stream names the creature,
+  # so an unnamed creature can't match ignored_npcs yet.
+  def ignored?(creature)
+    creature.noun && @ignored_npcs.include?(creature.noun)
+  end
+
+  def in_room?(creature)
+    Lich::DragonRealms::Creature.targets.any? { |c| c.id == creature.id }
+  end
+
+  def wait_for_mana
+    return if DRStats.mana >= @mana_threshold
+
+    echo "Waiting for mana above #{@mana_threshold} (offensive_spell_mana_threshold)"
+    pause 5 while DRStats.mana < @mana_threshold
+  end
+
+  # Follows DRCA.cast_spell step by step, so the target can be checked between
+  # the prep and the cast.
+  def cast_at(creature)
+    label = label_for(creature)
+    data = DRCMM.update_astral_data(@spell.dup, @settings)
+    return skip(label, 'no astral data for the spell') unless data
+    return skip(label, 'no runestone') if data['runestone_name'] && !DRCA.prepare_to_cast_runestone?(data, @settings)
+    return skip(label, 'could not face it') if @targeted && !face?(creature)
+
+    echo "#{data['name']} at #{label}"
+    DRC.bput('release spell', 'You let your concentration lapse', "You aren't preparing a spell") unless checkprep == 'None'
+    DRC.bput('release mana', 'You release all', "You aren't harnessing any mana")
+
+    prepared = DRCA.prepare?(data['abbrev'], data['mana'], data['symbiosis'], @prep_command,
+                             data['tattoo_tm'], data['runestone_name'], data['runestone_tm'], data['custom_prep_message'],
+                             custom_invoke_message: data['custom_invoke_message'],
+                             custom_spell_prep: @settings['custom_spell_prep'])
+    return skip(label, 'the prep failed') unless prepared
+
+    DRCI.put_away_item?(data['runestone_name'], @settings.runestone_storage) if data['runestone_name'] && DRCI.in_hands?(data['runestone_name'])
+    prepare_time = Time.now
+    add_cambrinth_mana(data)
+
+    if data['prep_time']
+      pause until Time.now - prepare_time >= data['prep_time']
+    else
+      waitcastrt?
+    end
+
+    unless in_room?(creature)
+      # A Targeted Magic pattern is locked on the creature that is gone, so it
+      # has to be released. Any other spell can go to the next creature.
+      if @targeted
+        release_spell
+        return skip(label, 'it left or died during the prep')
+      end
+
+      skip(label, 'it left or died during the prep')
+      creature = next_target
+      return echo("No creatures left. #{data['name']} stays prepared.") unless creature
+
+      @done_ids << creature.id
+      echo "#{data['name']} at #{label_for(creature)} instead"
+    end
+
+    cast = DRCA.cast?(cast_command(data, creature), data['symbiosis'], data['before'] || [], data['after'] || [], data['custom_cast_message'])
+    @@results[cast ? :cast : :failed] += 1
+  end
+
+  def label_for(creature)
+    "#{creature.name || 'unnamed creature'} (##{creature.id})"
+  end
+
+  def face?(creature)
+    result = DRC.bput("face ##{creature.id}",
+                      'You turn to face', 'You are already facing', 'Face what',
+                      'There is nothing else to face', "What's the point")
+    ['You turn to face', 'You are already facing'].include?(result)
+  end
+
+  # Targeted Magic fires at the creature faced before the prep, so it keeps the
+  # configured cast verb (e.g. barrage). Every other spell names the creature id.
+  def cast_command(data, creature)
+    @targeted ? data['cast'] : "cast ##{creature.id}"
+  end
+
+  # Same choice as DRCA.cast_spell, but the DRCA helpers raise on a spell with
+  # no cambrinth list, so do nothing for those.
+  def add_cambrinth_mana(data)
+    return if data['cambrinth'].nil? || data['cambrinth'].empty?
+
+    DRCA.normalize_cambrinth_items(@settings)
+    if DRCA.check_to_harness(@settings.use_harness_when_arcana_locked)
+      DRCA.harness_mana(data['cambrinth'].flatten)
+    else
+      DRCA.charge_cambrinth_items(data, @settings)
+    end
+  end
+
+  def release_spell
+    DRC.bput('release spell', 'You let your concentration lapse', "You aren't preparing a spell")
+    DRC.bput('release mana', 'You release all', "You aren't harnessing any mana")
+  end
+
+  def skip(label, reason)
+    @@results[:skipped] += 1
+    echo "Skipped #{label}: #{reason}"
+    nil
+  end
+end
+
+before_dying do
+  fput('release spell') if CastRoom.targeted? && DRCA.spell_preparing?
+
+  results = CastRoom.results
+  unless results.empty?
+    echo "cast-room: #{results[:cast]} cast, #{results[:failed]} failed, #{results[:skipped]} skipped"
+  end
+end
+
+CastRoom.new
