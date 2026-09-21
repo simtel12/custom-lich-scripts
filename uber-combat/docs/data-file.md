@@ -9,16 +9,21 @@ Every path and command in this document is relative to the repository root,
 `dr-scripts/data/base-hunting.yaml` with rank bands, critter rosters,
 per-critter records, premium flags and the probe's reachability records.
 
-The runtime needs its own copy at
-`lich-5/scripts/data/custom/base-uc-zones.yaml`. The two copies must stay
-byte-identical. Edit the source, then mirror it:
+The runtime reaches it through `lich-5/scripts/data/custom/base-uc-zones.yaml`,
+which is a **symlink back to this file**, not a copy. There is nothing to
+mirror and nothing that can drift; see [Installation](../README.md#installation).
 
-```sh
-cp data/base-uc-zones.yaml ../../lich-5/scripts/data/custom/base-uc-zones.yaml
-cmp data/base-uc-zones.yaml ../../lich-5/scripts/data/custom/base-uc-zones.yaml
-```
+That matters more than it looks, because the file is loaded two different ways.
+`ZoneTable.from_game_data` reads `get_data('uc-zones')`, which resolves to the
+runtime path, and `ZoneTable.load` reads this one directly -- the specs use the
+second, the game uses the first. While the runtime path was a copy, the data
+integrity specs were validating a file the game did not load. The link makes
+those two reads the same bytes by construction.
 
-Do not edit the runtime copy. Commit only the source copy.
+Linking is safe because Lich never writes a data file back: `setup_files.rb`
+loads them with `YAML.unsafe_load_file` and has no write path for one, and it
+decides whether a cached file is stale by hashing its content rather than by
+mtime, so an edit here is picked up on the next read.
 
 Keep the `base-` prefix. Lich globs `base*.yaml` and builds the name with
 `to_base_filename` (`setup_files.rb:201-203`), so `get_data('uc-zones')` finds

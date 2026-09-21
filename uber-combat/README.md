@@ -77,7 +77,7 @@ Three destinations under your Lich `scripts/` directory:
 | `uc-zones.lic`, `uc-leg.lic`, `uc-probe.lic`, `uc-director.lic` | `scripts/custom/` | symlink |
 | `uc-director-plugin-town.rb` | `scripts/custom/` | symlink |
 | `lib/uc_*.rb`, twelve files | `scripts/custom/lib/` | symlink |
-| `data/base-uc-zones.yaml` | `scripts/data/custom/` | **copy** |
+| `data/base-uc-zones.yaml` | `scripts/data/custom/` | symlink |
 
 None of those paths is a preference. The scripts build them: a `.lic` resolves
 its libraries as `SCRIPT_DIR/custom/lib`, the director globs
@@ -86,8 +86,8 @@ table arrives through `get_data('uc-zones')`, which globs `base*.yaml` across
 `scripts/data` and `scripts/data/custom`. That last glob is also why the file
 has to keep its `base-` prefix.
 
-The code is symlinked so that an edit in the checkout is live on the next run,
-with no copy step to forget.
+Everything is symlinked, so an edit or a `git pull` in the checkout is live on
+the next run and there is no copy step to forget.
 
 ### Doing it
 
@@ -101,16 +101,16 @@ ln -sfn "$UC"/uc-*.lic                "$LICH/scripts/custom/"
 ln -sfn "$UC"/uc-director-plugin-*.rb "$LICH/scripts/custom/"
 ln -sfn "$UC"/lib/uc_*.rb             "$LICH/scripts/custom/lib/"
 
-cp  "$UC/data/base-uc-zones.yaml" "$LICH/scripts/data/custom/"
-cmp "$UC/data/base-uc-zones.yaml" "$LICH/scripts/data/custom/base-uc-zones.yaml"
+ln -sfn "$UC"/data/base-uc-zones.yaml "$LICH/scripts/data/custom/"
 ```
 
-Re-running that is harmless, so it doubles as the update step after a pull.
+Re-running it is harmless. There is no separate update step: nothing is copied,
+so a pull in the checkout is already live.
 
-The zone table is the one thing copied rather than linked, which makes it the
-one thing that can drift. Run the `cp` and the `cmp` again after any pull that
-touches it. [`docs/data-file.md`](docs/data-file.md) has the rule and the
-reasoning.
+Lich only ever reads its data files, and it decides freshness by hashing their
+content rather than by mtime, so linking the zone table in is safe in the
+direction that would matter and an edit is picked up on the next read.
+[`docs/data-file.md`](docs/data-file.md) covers the file itself.
 
 ### Per character
 
