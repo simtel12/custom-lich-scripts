@@ -7,6 +7,12 @@ dr-scripts wherever possible, and it never forks `combat-trainer.lic`.
 Design notes, specifications and the progress ledger live outside this
 repository, in `dragonrealms/notes/uber-combat/`. Start at `99-progress.md`.
 
+**New here? Read [`docs/worked-example.md`](docs/worked-example.md).** It walks
+one character's `uc_settings` block through to the four legs it produces, and
+explains every step: why the legs split where they do, why one leg stances
+differently from the rest, and why nothing reports a gap. The rules below are
+stated one at a time; that document shows what they do together.
+
 ## What is built
 
 Wave 6 delivered the zone picker core. Wave 7 added leg advancement and the
@@ -110,7 +116,7 @@ bundle install
 rspec
 ```
 
-706 examples, about 6 seconds, no game needed.
+723 examples, about 6 seconds, no game needed.
 
 Run the linter from the repository root, not from this directory. The
 `.rubocop.yml` loads a custom cop through a relative path, so it resolves only
@@ -149,6 +155,10 @@ in `<Character>-setup.yaml`. All of it is optional except the catalogues.
 | `max_skills_per_leg` | How many killing skills a leg may carry. Absent means the default |
 | `hunt_duration_minutes` | Minutes to hunt in one stint. Absent means 30 |
 | `require_creature_flags` | Gates every creature in a zone must pass: `living`, `construct_or_undead`, `corporeal`. See below |
+
+[`docs/worked-example.md`](docs/worked-example.md) works this whole block
+through end to end on one real character, from the `exp` output to the four
+overlays, including a table of what each setting would have changed.
 
 ### The weapons catalogue is the list of what to train
 
